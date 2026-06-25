@@ -1,0 +1,27 @@
+Add OTP-based login with SMS fallback and account lockout after repeated failed attempts.
+
+Context:
+- We currently support password-only login for the customer portal.
+- Product wants a second factor for high-value accounts and as a stepping stone toward passwordless login.
+- SMS provider (Twilio) is already integrated for notifications but not yet used for auth codes.
+
+Scope (initial release):
+- Users can opt in to OTP at login after password validation, or be required by admin policy.
+- 6-digit OTP, 5-minute expiry, max 3 resend requests per 15 minutes.
+- After 5 failed OTP attempts within 30 minutes, lock the account for 15 minutes and alert security monitoring.
+- Fallback: if SMS delivery fails twice, offer email OTP if the user has a verified email.
+
+Out of scope for v1:
+- Authenticator app (TOTP)
+- Passwordless-only login
+- Admin UI for lockout policy (use configuration defaults)
+
+Constraints:
+- Must comply with existing audit logging standards (who, when, IP, outcome).
+- Mobile web must support OTP input with autofill from SMS where available.
+- Solution must work with current ASP.NET Core auth middleware and React SPA.
+
+Success metrics:
+- Reduce account takeover incidents
+- OTP login completion rate > 92% on first attempt
+- SMS delivery latency p95 < 8 seconds

@@ -1,0 +1,24 @@
+[P2] Logout button does not end user session
+
+Reported by: Customer Support
+Environment: Production (Web App v2.4.1)
+Browser: Chrome 124, Edge 124
+
+Description:
+When a user clicks "Log out" from the account menu, the UI navigates to the login page but the session cookie (`.AspNetCore.Session`) remains valid. Refreshing the browser or opening a new tab returns the user to the authenticated dashboard without re-entering credentials.
+
+Steps to reproduce:
+1. Log in as any active user
+2. Open Account menu → Log out
+3. Observe redirect to /login
+4. Navigate to /dashboard directly or refresh — user is still authenticated
+
+Expected: Session invalidated server-side; auth cookie cleared; subsequent requests return 401 until login.
+
+Actual: Session store entry persists until 30-minute idle timeout. Logout endpoint may not be called (button wired to client-side route only).
+
+Impact: Shared workstation risk; users believe they are logged out. ~12 support tickets this week.
+
+Recent changes: Frontend routing refactor in PR #1847 (merged Monday). Auth service logout API exists but is not invoked from the new menu component.
+
+Logs: No errors in auth-service logs on logout click. Last successful POST /api/auth/logout for this user was 14 days ago.
