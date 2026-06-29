@@ -29,9 +29,16 @@ public sealed class UploadDocumentCommandValidator : AbstractValidator<UploadDoc
     }
 }
 
+/// <summary>
+/// Saves the uploaded file to storage (Blob or local), persists metadata to SQL,
+/// then enqueues background indexing and returns immediately.
+/// The actual extraction → chunking → embedding → Azure AI Search pipeline runs
+/// asynchronously in BackgroundDocumentIndexingService.
+/// </summary>
 public sealed class UploadDocumentCommandHandler(
     IDocumentStorageService documentStorageService,
-    IDocumentRepository documentRepository) : IRequestHandler<UploadDocumentCommand, UploadDocumentResponse>
+    IDocumentRepository documentRepository,
+    IDocumentIndexingQueue indexingQueue) : IRequestHandler<UploadDocumentCommand, UploadDocumentResponse>
 {
     public async Task<UploadDocumentResponse> Handle(UploadDocumentCommand request, CancellationToken cancellationToken)
     {
@@ -55,6 +62,9 @@ public sealed class UploadDocumentCommandHandler(
 
         await documentRepository.AddAsync(document, cancellationToken);
         await documentRepository.SaveChangesAsync(cancellationToken);
+
+        // Enqueue for background indexing — returns immediately without blocking.
+        indexingQueue.Enqueue(document.Id);
 
         return new UploadDocumentResponse(document.Id, document.FileName, document.Status.ToString());
     }

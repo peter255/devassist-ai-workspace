@@ -1,4 +1,4 @@
-# DevAssist AI Workspace
+﻿# DevAssist AI Workspace
 
 An internal **Azure AI-powered engineering workspace** for software delivery teams. DevAssist is a practical, multi-workflow assistant that helps engineers retrieve knowledge from documentation, triage incidents consistently, and decompose feature requests into implementation-ready plans — all from a single web application.
 
@@ -57,15 +57,14 @@ DevAssist was intentionally designed to exercise practical **Azure AI Apps / Age
 
 | Azure capability | Where it appears in DevAssist |
 | ---------------- | ----------------------------- |
-| **Azure OpenAI integration** | Copilot answers, ticket analysis, requirement breakdown (structured JSON) |
-| **Prompt orchestration** | Grounded copilot prompts; structured analyzer prompts with fixed output schemas |
-| **Retrieval-Augmented Generation (RAG)** | Document chunking, chunk retrieval, citation-backed copilot answers |
-| **Azure AI Search integration boundary** | Search indexer/retriever abstractions; **scaffolded** — local SQL keyword search used when not configured |
-| **Blob / file storage abstraction** | Engineering document upload and storage (`Azure Blob` or local filesystem) |
-| **AI workflow orchestration** | Multiple task-focused AI modules (copilot, tickets, requirements) in one workspace |
-| **Local fallback strategy** | Heuristic analyzers, SQL retrieval, filesystem storage — demo-friendly without Azure credentials |
-
-**Honest scope note:** Vector embeddings and full Azure AI Search upsert/query are **integration boundaries with placeholders**, not production-complete implementations. See [Known MVP limitations](#known-mvp-limitations).
+| **Azure AI Foundry / Azure OpenAI** | `IAiAgent` abstraction → `AzureFoundryAgent` (chat + JSON) or `LocalFallbackAgent` |
+| **Azure OpenAI Embeddings** | `AzureOpenAiEmbeddingService` — dense vectors for hybrid search (Phase 2) |
+| **Prompt orchestration** | Dedicated `PromptBuilder` classes per module: `CopilotPromptBuilder`, `TicketAnalyzerPromptBuilder`, `RequirementBreakdownPromptBuilder` |
+| **Retrieval-Augmented Generation (RAG)** | Upload → Blob → extract → chunk → embed → Azure AI Search → top-K → grounded prompt → Azure OpenAI answer with citations |
+| **Azure AI Search (hybrid + semantic)** | BM25 + KNN vector (HNSW cosine) + optional semantic re-ranking; SQL keyword fallback when not configured |
+| **Azure Blob Storage** | Document upload pipeline; local filesystem fallback |
+| **Background indexing** | `BackgroundDocumentIndexingService` — uploads return immediately; indexing runs async via `System.Threading.Channels` |
+| **Local fallback strategy** | Every Azure service has a local equivalent — the app runs fully without Azure credentials |
 
 ---
 
@@ -82,7 +81,7 @@ DevAssist was intentionally designed to exercise practical **Azure AI Apps / Age
 
 ## Architecture overview
 
-```
+``
 ┌─────────────────────────────────────────────────────────────┐
 │                  React + TypeScript (Vite)                  │
 │         Dashboard · Copilot · Tickets · Requirements        │
@@ -104,7 +103,7 @@ DevAssist was intentionally designed to exercise practical **Azure AI Apps / Age
                    │ Azure Blob     │
                    │ (optional)     │
                    └────────────────┘
-```
+``
 
 **Backend:** ASP.NET Core 8 modular monolith — Domain, Application, Infrastructure, Contracts, API.
 
@@ -125,7 +124,7 @@ See [docs/architecture.md](docs/architecture.md) for request flows and module bo
 
 ## Repository structure
 
-```
+``
 devassist-ai-workspace/
 ├── src/
 │   ├── DevAssist.Api/           # HTTP API, controllers, Program.cs, Swagger
@@ -140,7 +139,7 @@ devassist-ai-workspace/
 ├── nuget.config                 # NuGet.org feed for clean CI/GitHub clones
 ├── .env.example                 # Environment variable template
 └── DevAssist.sln
-```
+``
 
 ---
 
@@ -159,9 +158,9 @@ devassist-ai-workspace/
 
 ### 1. Start SQL Server
 
-```bash
+``bash
 docker compose up -d
-```
+``
 
 Default SA password matches `appsettings.json` and `.env.example`: `Your_strong_password123`.
 
@@ -173,10 +172,10 @@ Copy `.env.example` to `.env` and fill Azure values when ready. For a local demo
 
 One command starts the API and launches Vite automatically via **SpaProxy** (same as pressing F5 in Visual Studio):
 
-```bash
+``bash
 dotnet restore DevAssist.sln
 dotnet run --project src/DevAssist.Api --launch-profile http
-```
+``
 
 Or from the repo root: `npm run dev` / `scripts\dev.cmd` (Windows).
 
@@ -192,11 +191,11 @@ Or from the repo root: `npm run dev` / `scripts\dev.cmd` (Windows).
 
 If you prefer two terminals:
 
-```bash
+``bash
 cd frontend/devassist-ui
 npm install
 npm run dev
-```
+``
 
 - UI: `http://localhost:5173` (Vite proxies `/api` and `/health` to the API)
 
@@ -224,19 +223,23 @@ Settings live in `src/DevAssist.Api/appsettings.json` or environment variables (
 | Setting | Purpose |
 |---------|---------|
 | `ConnectionStrings__DevAssistDb` | SQL Server connection string |
-| `AzureOpenAi__Endpoint` | Azure OpenAI endpoint URL |
+| `AzureOpenAi__Endpoint` | Azure OpenAI / AI Foundry endpoint URL |
 | `AzureOpenAi__ApiKey` | Azure OpenAI API key |
-| `AzureOpenAi__DeploymentName` | Chat model deployment name |
+| `AzureOpenAi__DeploymentName` | Chat model deployment (e.g. `gpt-4o`) |
+| `AzureOpenAi__EmbeddingDeploymentName` | Embedding model (e.g. `text-embedding-3-small`) |
 | `AzureSearch__Endpoint` | Azure AI Search service URL |
 | `AzureSearch__ApiKey` | Search admin/query key |
 | `AzureSearch__IndexName` | Index name (default: `devassist-documents`) |
+| `AzureSearch__SemanticConfigurationName` | Semantic ranker config name (leave empty to disable) |
+| `AzureSearch__VectorDimensions` | Embedding vector dimensions (default: `1536`) |
 | `BlobStorage__ConnectionString` | Azure Storage connection string |
 | `BlobStorage__ContainerName` | Blob container (default: `documents`) |
 | `LocalFileStorage__RootPath` | Local file path when blob is empty (default: `./data/documents`) |
 | `VITE_API_BASE_URL` | Frontend API base (empty = use Vite proxy) |
 
-**Local fallback behavior:** Empty `AzureOpenAi` → heuristic ticket/requirement analyzers + grounded local copilot. Empty `AzureSearch` → SQL keyword chunk retrieval. Empty `BlobStorage` → local filesystem.
+**Local fallback behavior:** Empty `AzureOpenAi` -> heuristic analyzers + grounded copilot. Empty `AzureSearch` -> SQL keyword retrieval. Empty `BlobStorage` -> local filesystem. All empty = fully local demo.
 
+For Azure provisioning steps see [docs/azure-setup.md](docs/azure-setup.md).
 ---
 
 ## Demo flow (~5–7 minutes)
@@ -264,18 +267,34 @@ See [docs/prompts.md](docs/prompts.md) for copilot grounding rules, structured J
 ---
 
 ## Known MVP limitations
+## Phase 2 completion status (Azure AI Foundry Integration)
 
-This repository is intentionally a **demo-ready internal MVP**. Some Azure integrations are **scaffolded or deferred** by design; the items below are **known boundaries**, not accidental gaps.
+Phase 2 adds real Azure AI services on top of the MVP local fallbacks.
+
+| Capability | Phase 2 Status |
+|------------|---------------|
+| IAiAgent abstraction (AzureFoundryAgent + LocalFallbackAgent) | Complete |
+| Azure OpenAI embeddings (AzureOpenAiEmbeddingService) | Complete |
+| Azure AI Search vector fields (HNSW cosine, 1536 dims) | Complete |
+| Hybrid search (BM25 + KNN via RRF) | Complete |
+| Semantic re-ranking (optional, configurable) | Complete |
+| Azure Blob Storage (with local fallback) | Complete |
+| Background indexing (Channel queue + HostedService) | Complete |
+| Auto-queue on upload (non-blocking) | Complete |
+| SQL port fix (14333 -> 1433) | Complete |
+| New config keys (EmbeddingDeploymentName, SemanticConfigurationName) | Complete |
+| docs/azure-setup.md | Complete |
+
+## Remaining TODOs
 
 | Area | Status |
 |------|--------|
-| Azure AI Search upsert/query | Scaffolded; local SQL search used when not configured |
-| Azure OpenAI embeddings | Placeholder; chunking uses text splits without vectors |
-| PDF / DOCX extraction | Not supported — explicit error returned |
-| Copilot message history | Session persisted server-side; UI reload does not restore thread |
-| Authentication / RBAC | Not implemented — internal MVP assumption |
-| Proposal Assistant | Not in scope for this release |
-
+| PDF / DOCX extraction | Not supported - add PdfPig or DocumentFormat.OpenXml |
+| Copilot message history UI reload | Session persisted; UI does not restore thread on refresh |
+| Authentication / RBAC | Not implemented - internal MVP assumption |
+| Proposal Assistant | Not in scope |
+| Azure DevOps integration | Not in scope |
+| Microsoft Teams bot | Not in scope |
 ---
 
 ## Suggested next engineering steps

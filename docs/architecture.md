@@ -19,7 +19,7 @@ DevAssist.Api
 |---------|----------------|
 | `DevAssist.Domain` | Entities (`Document`, `DocumentChunk`, `ChatSession`, `ChatMessage`, `TicketAnalysis`, `RequirementAnalysis`) and enums |
 | `DevAssist.Application` | Use cases: commands, queries, validators, mappers, service interfaces |
-| `DevAssist.Infrastructure` | EF Core `DevAssistDbContext`, repositories, Azure adapters, prompt builders, AI service implementations |
+| `DevAssist.Infrastructure` | EF Core `DevAssistDbContext`, repositories, Azure adapters, prompt builders, AI agents |
 | `DevAssist.Contracts` | API DTOs (`ApiResponse<T>`, module request/response records) |
 | `DevAssist.Api` | Composition root, CORS, Serilog, Swagger, health checks, auto-migrate (Development) |
 
@@ -30,19 +30,22 @@ DevAssist.Api
 ## Module boundaries
 
 ### Documents
-- Upload files to blob or local storage
+- Upload files to Blob Storage or local filesystem
 - Track metadata and status (`Uploaded` → `Processing` → `Indexed` / `Failed`)
-- Extract text (`.txt`, `.md`), chunk, persist chunks, optional search index upsert
+- Extract text (`.txt`, `.md`), chunk (sliding window, 1000 chars / 200 overlap)
+- Generate embedding vectors (Azure OpenAI) and upsert to Azure AI Search
+- Background indexing via `BackgroundDocumentIndexingService` — upload returns immediately
 
-**Key types:** `IDocumentRepository`, `IDocumentStorageService`, `IDocumentIndexingOrchestrator`, `IDocumentSearchIndexer`
+**Key types:** `IDocumentRepository`, `IDocumentStorageService`, `IDocumentIndexingOrchestrator`, `IDocumentSearchIndexer`, `IDocumentIndexingQueue`
 
 ### Knowledge Copilot
-- Chat sessions and messages in SQL
-- Retrieve relevant chunks (Azure Search or SQL keyword fallback)
-- Build grounded prompt → Azure OpenAI (or local fallback)
-- Return answer with citation DTOs
+- Chat sessions and messages persisted in SQL
+- Retrieve relevant chunks with hybrid/vector search (Azure AI Search) or SQL keyword fallback
+- Build grounded prompt with context window and chat history
+- `IAiAgent` (AzureFoundryAgent or LocalFallbackAgent) generates the answer
+- Return answer with citation DTOs (document name + chunk reference)
 
-**Key types:** `IChatRepository`, `IDocumentSearchRetriever`, `ICopilotPromptBuilder`, `IKnowledgeCopilotService`, `IAzureOpenAiChatService`
+**Key types:** `IChatRepository`, `IDocumentSearchRetriever`, `ICopilotPromptBuilder`, `IKnowledgeCopilotService`, `IAiAgent`
 
 ### Ticket Analyzer
 - Analyze free-text ticket → structured JSON via Azure OpenAI
@@ -60,9 +63,9 @@ DevAssist.Api
 
 ---
 
-## Request flows
+## Request flows (Phase 2)
 
-### Document upload and indexing
+### Document upload — background indexing
 
 ```mermaid
 sequenceDiagram
@@ -71,24 +74,28 @@ sequenceDiagram
     participant App as Application
     participant Store as Blob/Local Storage
     participant DB as SQL Server
-    participant Search as AI Search (optional)
+    participant Queue as IndexingQueue
+    participant BG as BackgroundIndexingService
+    participant Embed as EmbeddingService
+    participant Search as Azure AI Search (opt.)
 
     UI->>API: POST /api/documents/upload (multipart)
     API->>App: UploadDocumentCommand
     App->>Store: UploadAsync(stream)
     App->>DB: Insert Document (Uploaded)
-    API-->>UI: document id, status
+    App->>Queue: Enqueue(documentId)
+    API-->>UI: {id, status: "Uploaded"} (returns immediately)
 
-    UI->>API: POST /api/documents/{id}/index
-    API->>App: IndexDocumentCommand
-    App->>Store: OpenReadAsync
-    App->>App: Extract text, chunk
-    App->>DB: ReplaceChunks, status=Indexed
-    App->>Search: Upsert chunks (if configured)
-    API-->>UI: chunk count, status
+    Note over BG: background loop
+    BG->>Queue: DequeueAsync
+    BG->>Store: OpenReadAsync
+    BG->>BG: Extract text, chunk (sliding window)
+    BG->>Embed: GenerateEmbeddingsAsync (or placeholder)
+    BG->>DB: ReplaceChunks, status=Indexed
+    BG->>Search: UpsertChunksAsync with vectors (optional)
 ```
 
-### Copilot question answering
+### Copilot question answering (Phase 2 — hybrid + vector)
 
 ```mermaid
 sequenceDiagram
@@ -96,20 +103,27 @@ sequenceDiagram
     participant API
     participant Copilot as KnowledgeCopilotService
     participant DB as SQL Server
-    participant Retriever as Search/SQL Retriever
-    participant OAI as Azure OpenAI
-
-    UI->>API: POST /api/copilot/sessions
-    API-->>UI: sessionId
+    participant Embed as EmbeddingService
+    participant Search as AzureSearchRetriever
+    participant SQL as SqlRetriever (fallback)
+    participant Agent as IAiAgent (AzureFoundry/Local)
 
     UI->>API: POST /api/copilot/ask
     API->>Copilot: AskAsync(sessionId, question)
     Copilot->>DB: Save user message
-    Copilot->>Retriever: Retrieve chunks for question
-    Copilot->>Copilot: Build prompt (history + chunks)
-    Copilot->>OAI: CompleteAsync
-    Copilot->>DB: Save assistant message + citations JSON
-    API-->>UI: answer, citations
+    Copilot->>Embed: Embed question for vector query
+    Copilot->>Search: SearchAsync (hybrid BM25+vector+semantic)
+    alt Azure Search returns results
+        Search-->>Copilot: top-K chunks with scores
+    else Azure Search empty or unavailable
+        Copilot->>SQL: SearchAsync (keyword fallback)
+        SQL-->>Copilot: top-K chunks
+    end
+    Copilot->>Copilot: Build grounded prompt (history + chunks)
+    Copilot->>Agent: CompleteAsync(systemPrompt, userPrompt)
+    Agent-->>Copilot: answer text
+    Copilot->>DB: Save assistant message + citationsJson
+    API-->>UI: {answer, citations[]}
 ```
 
 ### Ticket analysis
@@ -119,7 +133,7 @@ sequenceDiagram
     participant UI
     participant API
     participant Handler as AnalyzeTicketCommandHandler
-    participant AI as TicketAnalyzerService
+    participant AI as ITicketAnalyzerService
     participant DB as SQL Server
 
     UI->>API: POST /api/tickets/analyze { text }
@@ -137,7 +151,7 @@ sequenceDiagram
     participant UI
     participant API
     participant Handler as BreakdownRequirementCommandHandler
-    participant AI as RequirementBreakdownService
+    participant AI as IRequirementBreakdownService
     participant DB as SQL Server
 
     UI->>API: POST /api/requirements/breakdown { text }
@@ -150,39 +164,75 @@ sequenceDiagram
 
 ---
 
-## Infrastructure responsibilities
+## Infrastructure responsibilities (Phase 2)
 
-| Component | Implementation | When not configured |
-|-----------|----------------|---------------------|
+| Component | Azure (when configured) | Fallback (local) |
+|-----------|------------------------|-----------------|
+| AI agent | `AzureFoundryAgent` (Azure AI Foundry / OpenAI) | `LocalFallbackAgent` → heuristics |
+| Chat service | `AzureFoundryAgent` (via `IAzureOpenAiChatService`) | `LocalGroundedChatService` |
+| Embeddings | `AzureOpenAiEmbeddingService` | `PlaceholderEmbeddingService` (empty vectors) |
 | Document storage | `AzureBlobDocumentStorageService` | `LocalFileDocumentStorageService` |
-| Search indexing | `AzureSearchDocumentIndexer` | `NoOpDocumentSearchIndexer` |
-| Chunk retrieval | `AzureSearchDocumentRetriever` | `SqlDocumentSearchRetriever` |
-| Embeddings | `AzureOpenAiEmbeddingService` | `PlaceholderEmbeddingService` |
-| Chat completion | `AzureOpenAiChatService` | `LocalGroundedChatService` |
+| Search indexing | `AzureSearchDocumentIndexer` (with vectors + semantic) | `NoOpDocumentSearchIndexer` |
+| Chunk retrieval | `HybridDocumentSearchRetriever` (Azure first → SQL fallback) | `SqlDocumentSearchRetriever` |
 | Ticket analysis | `AzureOpenAiTicketAnalyzerService` | `LocalTicketAnalyzerService` |
 | Requirement breakdown | `AzureOpenAiRequirementBreakdownService` | `LocalRequirementBreakdownService` |
 
-Registration is centralized in `InfrastructureServiceCollectionExtensions.cs` — each Azure service is selected based on configuration presence.
+Registration is centralized in `InfrastructureServiceCollectionExtensions.cs` — each Azure service is selected based on configuration presence at startup.
+
+---
+
+## IAiAgent abstraction (Phase 2)
+
+`IAiAgent` is the Phase 2 high-level AI completion abstraction defined in the Application layer. It replaces direct use of `IAzureOpenAiChatService` in new code and exposes an `IsConfigured` property so callers can adapt behavior.
+
+```
+IAiAgent
+├── AzureFoundryAgent  — Azure AI Foundry / Azure OpenAI (also IAzureOpenAiChatService)
+└── LocalFallbackAgent — returns empty string; callers apply module-specific logic
+```
+
+`IAzureOpenAiChatService` is preserved for backward compatibility. Existing module services (`KnowledgeCopilotService`, `AzureOpenAiTicketAnalyzerService`, `AzureOpenAiRequirementBreakdownService`) continue to receive `IAzureOpenAiChatService` through DI, which is now fulfilled by `AzureFoundryAgent` when Azure is configured.
+
+---
+
+## Background indexing architecture
+
+```
+HTTP Thread                        Background Thread
+──────────────────────             ──────────────────────────────────────────
+UploadDocumentCommand              BackgroundDocumentIndexingService (Hosted)
+  → save file                        loop:
+  → insert Document (SQL)              documentId = queue.DequeueAsync()
+  → queue.Enqueue(id)  ──────────►     scope = CreateScope()
+  ← return 200 immediately             orchestrator.IndexAsync(documentId)
+                                         extract → chunk → embed → index
+                                       log result
+```
+
+The `DocumentIndexingQueue` is an unbounded `System.Threading.Channels.Channel<Guid>` singleton.
+Items survive server restarts only if re-indexed via `POST /api/documents/{id}/index`.
 
 ---
 
 ## Azure service responsibilities
 
-### Azure OpenAI
+### Azure AI Foundry / Azure OpenAI
 - **Chat deployment:** copilot answers, ticket JSON, requirement JSON
-- **Embeddings (planned):** semantic chunk search when wired
+- **Embedding deployment:** dense vector generation for hybrid/semantic chunk retrieval
+- Supports both standard Azure OpenAI and Foundry serverless `/v1` endpoints
 
 ### Azure AI Search
-- Store document chunk index for hybrid/vector retrieval
-- Currently scaffolded; local SQL `LIKE` search is the dev fallback
+- Stores document chunk index with vector field (`contentVector`, HNSW cosine)
+- Supports BM25 keyword, KNN vector, hybrid (RRF), and semantic re-ranking
+- Index created automatically on first upsert
 
 ### Azure Blob Storage
 - Durable document file storage for uploads
 - Local `./data/documents` mirrors this in development
 
 ### SQL Server
-- System of record: documents, chunks, chat, analyses
-- Also serves as retrieval fallback for copilot
+- System of record: documents, chunks, chat sessions/messages, analyses
+- Keyword fallback retriever uses `LIKE`-based BM25 scoring from SQL chunks
 
 ---
 
@@ -211,8 +261,9 @@ frontend/devassist-ui/src/
 | New AI module | Add interface in Application, prompt builder + service in Infrastructure, MediatR handler, controller, frontend page |
 | New document type / extractor | Implement `IDocumentTextExtractor`, register in DI |
 | Swap retrieval strategy | Implement `IDocumentSearchRetriever`, register based on config |
-| Auth | Add middleware + user context; filter repositories by tenant/user |
+| Auth / RBAC | Add middleware + user context; filter repositories by tenant/user |
 | Work item export | New Application command calling Azure DevOps client from analyzer output |
+| Streaming responses | Replace `CompleteAsync` with `StreamAsync` in `IAiAgent`; update controllers to SSE |
 
 ---
 
@@ -222,7 +273,7 @@ frontend/devassist-ui/src/
 |-------|---------|
 | `Documents` | File metadata, status, blob path |
 | `DocumentChunks` | Indexed text segments linked to documents |
-| `ChatSessions` / `ChatMessages` | Copilot conversation state |
+| `ChatSessions` / `ChatMessages` | Copilot conversation state with citation JSON |
 | `TicketAnalyses` | Persisted ticket triage results |
 | `RequirementAnalyses` | Persisted breakdown results (JSON task columns) |
 
