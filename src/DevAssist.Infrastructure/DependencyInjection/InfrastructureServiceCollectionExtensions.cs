@@ -112,13 +112,22 @@ public static class InfrastructureServiceCollectionExtensions
     {
         var endpoint = configuration[$"{AzureSearchOptions.SectionName}:Endpoint"];
         var apiKey = configuration[$"{AzureSearchOptions.SectionName}:ApiKey"];
+
+        // Always register the SQL retriever as the primary retriever because document chunks
+        // are stored in SQL by DocumentIndexingOrchestrator. AzureSearchDocumentRetriever is
+        // also registered and is used when Azure Search is configured AND documents have been
+        // indexed there. The SQL retriever ensures the Copilot always has access to locally
+        // indexed documents regardless of Azure Search availability.
+        services.AddScoped<SqlDocumentSearchRetriever>();
+
         if (string.IsNullOrWhiteSpace(endpoint) || string.IsNullOrWhiteSpace(apiKey))
         {
             services.AddScoped<IDocumentSearchRetriever, SqlDocumentSearchRetriever>();
             return;
         }
 
-        services.AddScoped<IDocumentSearchRetriever, AzureSearchDocumentRetriever>();
+        services.AddScoped<AzureSearchDocumentRetriever>();
+        services.AddScoped<IDocumentSearchRetriever, HybridDocumentSearchRetriever>();
     }
 
     private static void RegisterEmbeddingService(IServiceCollection services, IConfiguration configuration)

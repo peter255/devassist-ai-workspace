@@ -1,3 +1,9 @@
+// Load .env file from workspace root before building configuration so that
+// Azure OpenAI / Azure Search / Blob Storage credentials are picked up
+// without needing to set system-level environment variables manually.
+// Real environment variables always take precedence over .env values.
+DotEnvLoader.Load(AppContext.BaseDirectory);
+
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Host.UseSerilog((context, loggerConfiguration) =>
@@ -48,7 +54,10 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 
-app.UseHttpsRedirection();
+if (!app.Environment.IsDevelopment())
+{
+    app.UseHttpsRedirection();
+}
 app.MapControllers();
 app.MapHealthChecks("/health");
 
@@ -71,3 +80,38 @@ if (!app.Environment.IsDevelopment())
 }
 
 app.Run();
+
+// Walks up the directory tree from startDir to find and load a .env file.
+// Keys use ASP.NET Core double-underscore convention (e.g. AzureOpenAi__ApiKey).
+// Existing environment variables are never overwritten.
+static class DotEnvLoader
+{
+    public static void Load(string startDirectory)
+    {
+        var envFile = FindFile(new DirectoryInfo(startDirectory), ".env");
+        if (envFile is null) return;
+
+        foreach (var line in File.ReadAllLines(envFile))
+        {
+            var trimmed = line.Trim();
+            if (string.IsNullOrEmpty(trimmed) || trimmed.StartsWith('#')) continue;
+            var idx = trimmed.IndexOf('=');
+            if (idx <= 0) continue;
+            var key = trimmed[..idx].Trim();
+            var value = trimmed[(idx + 1)..].Trim();
+            if (Environment.GetEnvironmentVariable(key) is null)
+                Environment.SetEnvironmentVariable(key, value, EnvironmentVariableTarget.Process);
+        }
+    }
+
+    private static string? FindFile(DirectoryInfo? dir, string fileName)
+    {
+        while (dir is not null)
+        {
+            var candidate = Path.Combine(dir.FullName, fileName);
+            if (File.Exists(candidate)) return candidate;
+            dir = dir.Parent;
+        }
+        return null;
+    }
+}

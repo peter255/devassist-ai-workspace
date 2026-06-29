@@ -2,7 +2,12 @@
   "name": "devassist-ai-workspace",
   "private": true,
   "scripts": {
-    "dev": "dotnet run --project src/DevAssist.Api --launch-profile http",
+    "dev": "concurrently -n api,ui -c blue,green \"dotnet run --project src/DevAssist.Api --launch-profile http\" \"npm run dev --prefix frontend/devassist-ui\"",
+    "dev:api": "dotnet run --project src/DevAssist.Api --launch-profile http",
+    "dev:ui": "npm run dev --prefix frontend/devassist-ui",
     "start": "dotnet run --project src/DevAssist.Api --launch-profile http"
+  },
+  "devDependencies": {
+    "concurrently": "^10.0.3"
   }
 }

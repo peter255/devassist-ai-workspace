@@ -20,12 +20,26 @@ No API keys or secrets belong in this document.
 **Implementation:** `CopilotPromptBuilder` (`Infrastructure/Copilot/Prompting/`)
 
 ### System prompt goals
-- Act as an internal assistant for software delivery teams
+- Act as an internal engineering copilot for software delivery teams
 - Answer **only** from provided document context chunks
 - State clearly when context is insufficient
 - Do not invent APIs, integrations, or system behavior
 - Be concise and engineering-focused
 - Reference chunk keys in brackets, e.g. `[chunk-ref]`
+- Always include document citations when available
+
+### Language policy
+- Respond in the **same language** used by the user — detected implicitly from the question
+- Arabic questions → answer in Modern Standard Arabic
+- English questions → answer in English
+- Any other language → answer in that language whenever possible
+- Well-known technology names (Azure, OpenAI, Azure AI Search, SQL Server, ASP.NET Core, REST API, JWT, Docker, Kubernetes, GraphQL, Kafka, etc.) are **never translated** and remain in English regardless of the response language
+
+### Multilingual retrieval (query translation)
+- `KnowledgeCopilotService` detects questions written in non-Latin scripts (Arabic, Hebrew, CJK, etc.) by checking whether more than 50% of letters fall outside the Latin/Latin-Extended Unicode blocks (U+0000–U+024F)
+- When non-Latin is detected, an extra LLM call translates the question into a concise English keyword query **used only for document retrieval**
+- The original user question is always passed unchanged into the answer-generation prompt so the language policy applies correctly
+- If the translation call fails for any reason, the original question is used as the retrieval query (graceful fallback — no request failure)
 
 ### User prompt composition
 1. **Recent conversation** — last 6 messages (user/assistant)
