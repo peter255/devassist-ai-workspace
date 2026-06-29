@@ -145,6 +145,7 @@ export function CopilotChat({ hasIndexedDocuments }: CopilotChatProps) {
           <form className="copilot-chat__input-row" onSubmit={handleAsk}>
             <input
               type="text"
+              dir="auto"
               value={question}
               onChange={(e) => setQuestion(e.target.value)}
               placeholder={
@@ -175,7 +176,7 @@ export function CopilotChat({ hasIndexedDocuments }: CopilotChatProps) {
 function MessageBubble({ message }: { message: ChatMessageItem }) {
   return (
     <div className={`message message--${message.role}`}>
-      <p className="message__content">{message.content}</p>
+      <p className="message__content" dir="auto">{message.content}</p>
       {message.citations && message.citations.length > 0 && (
         <CitationsList citations={message.citations} />
       )}

@@ -229,6 +229,8 @@
   font-size: 0.9rem;
   line-height: 1.55;
   color: #1e1b4b;
+  unicode-bidi: plaintext;
+  text-align: start;
 }
 
 .req-sections-grid {
@@ -272,6 +274,11 @@
   font-size: 0.85rem;
   line-height: 1.5;
   color: #292524;
+}
+
+.req-section__list li {
+  unicode-bidi: plaintext;
+  text-align: start;
 }
 
 .req-section__list li + li {

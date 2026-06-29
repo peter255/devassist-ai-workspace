@@ -751,6 +751,9 @@
 .message__content {
   margin: 0;
   white-space: pre-wrap;
+  /* Allow each paragraph to set its own bidi direction via dir="auto" */
+  unicode-bidi: plaintext;
+  text-align: start;
 }
 
 .message--typing {

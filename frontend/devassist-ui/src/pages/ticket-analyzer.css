@@ -227,6 +227,8 @@
   font-size: 0.9rem;
   line-height: 1.5;
   color: #292524;
+  unicode-bidi: plaintext;
+  text-align: start;
 }
 
 /* Severity badges */

@@ -72,6 +72,7 @@ export function RequirementBreakdownPage() {
             <textarea
               id="requirement-text"
               className="req-form__textarea"
+              dir="auto"
               rows={10}
               value={requirementText}
               onChange={(e) => setRequirementText(e.target.value)}
@@ -144,7 +145,7 @@ export function RequirementBreakdownPage() {
                     <time className="req-history-item__date">
                       {new Date(item.createdAt).toLocaleString()}
                     </time>
-                    <p className="req-history-item__summary">{item.functionalSummary}</p>
+                    <p className="req-history-item__summary" dir="auto">{item.functionalSummary}</p>
                   </button>
                 </li>
               ))}
@@ -168,7 +169,7 @@ function BreakdownResultCard({ result }: { result: BreakdownRequirementResponse 
 
       <section className="req-summary-block">
         <h4>Functional Summary</h4>
-        <p>{result.functionalSummary}</p>
+        <p dir="auto">{result.functionalSummary}</p>
       </section>
 
       <div className="req-sections-grid">
@@ -200,7 +201,7 @@ function TaskListSection({
       ) : (
         <ul className="req-section__list">
           {items.map((item, index) => (
-            <li key={`${title}-${index}`}>{item}</li>
+            <li key={`${title}-${index}`} dir="auto">{item}</li>
           ))}
         </ul>
       )}

@@ -6,6 +6,33 @@ It is structured as a **modular monolith** with clear Azure integration boundari
 
 ---
 
+## Screenshots
+
+### Dashboard
+![Dashboard](docs/screenshots/dashboard.png)
+
+### Knowledge Copilot — Arabic response (RTL)
+> Auto-detects Arabic text direction — answer flows right-to-left, mixed content handled per paragraph.
+
+![Copilot Arabic](docs/screenshots/copilot-arabic-answer.png)
+
+### Knowledge Copilot — English response
+> Grounded answer with source citations from indexed markdown documents.
+
+![Copilot English](docs/screenshots/copilot-english-answer.png)
+
+### Ticket & Incident Analyzer
+> Structured triage output: severity badge, category, impacted module, and suggested action.
+
+![Ticket Analyzer](docs/screenshots/ticket-analyzer.png)
+
+### Requirement Breakdown
+> Full engineering breakdown: functional summary, backend/frontend tasks, testing checklist, risks, assumptions, and acceptance criteria.
+
+![Requirement Breakdown](docs/screenshots/requirement-breakdown.png)
+
+---
+
 ## Executive summary
 
 DevAssist is a demo-ready internal MVP that packages three common delivery workflows — **engineering knowledge retrieval**, **ticket triage**, and **requirement decomposition** — into one cohesive workspace. The solution is intentionally built as a **modular monolith** (ASP.NET Core + React) so teams can evolve each workflow independently while sharing persistence and infrastructure. It demonstrates **Azure AI application patterns** — grounded Q&A, structured model outputs, retrieval boundaries, and storage abstractions — with **local fallbacks** so reviewers can run and present the project without Azure credentials.

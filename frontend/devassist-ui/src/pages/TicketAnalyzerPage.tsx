@@ -60,6 +60,7 @@ export function TicketAnalyzerPage() {
             <textarea
               id="ticket-text"
               className="ticket-form__textarea"
+              dir="auto"
               rows={10}
               value={ticketText}
               onChange={(e) => setTicketText(e.target.value)}
@@ -128,7 +129,7 @@ export function TicketAnalyzerPage() {
                           {new Date(item.createdAt).toLocaleString()}
                         </time>
                       </div>
-                      <p className="history-item__summary">{item.summary}</p>
+                      <p className="history-item__summary" dir="auto">{item.summary}</p>
                       <p className="history-item__meta">
                         {item.category} · {item.impactedModule}
                       </p>
@@ -176,7 +177,7 @@ function ResultField({
   return (
     <div className={`result-field ${full ? 'result-field--full' : ''} ${highlight ? 'result-field--highlight' : ''}`}>
       <span className="result-field__label">{label}</span>
-      <p className="result-field__value">{value}</p>
+      <p className="result-field__value" dir="auto">{value}</p>
     </div>
   )
 }
