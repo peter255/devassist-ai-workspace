@@ -48,7 +48,7 @@ Returns API metadata for dashboard health display.
 ## Documents
 
 ### `POST /api/documents/upload`
-Upload an engineering document.
+Upload an engineering document. **Phase 2:** Indexing starts automatically in the background — the HTTP response returns immediately with status `Uploaded`.
 
 **Content-Type:** `multipart/form-data`
 
@@ -67,7 +67,14 @@ Upload an engineering document.
 }
 ```
 
-**Notes:** Supported text extraction: `.txt`, `.md`. PDF/DOCX return a clear not-supported error.
+**Phase 2 pipeline (background, after response):**
+1. Text extraction (`.txt`, `.md` supported; PDF/DOCX return extraction error, status set to `Failed`)
+2. Sliding-window chunking (1000 chars, 200 overlap)
+3. Embedding vector generation (Azure OpenAI, or placeholder zeros)
+4. Azure AI Search upsert with vectors (or no-op if not configured)
+5. SQL chunk persistence; document status updated to `Indexed` or `Failed`
+
+Poll `GET /api/documents/{id}` to check when status transitions to `Indexed`.
 
 ---
 
@@ -112,18 +119,20 @@ Document details including chunk count.
 ---
 
 ### `POST /api/documents/{documentId}/index`
-Run the indexing pipeline: extract text → chunk → persist → optional search upsert.
+Re-queue an existing document for background re-indexing (e.g. after an initial failure or to refresh vectors). Returns immediately.
 
 **Response `data`:**
 ```json
 {
   "id": "guid",
-  "status": "Indexed",
-  "chunkCount": 12
+  "status": "Queued",
+  "chunkCount": 0
 }
 ```
 
-**Errors:** `404` document not found; `400` validation failures; extraction failures set status `Failed`.
+**Notes:** Actual indexing runs asynchronously — poll document status to confirm completion.
+
+**Errors:** `404` document not found; `400` validation failures.
 
 ---
 
@@ -176,12 +185,14 @@ Ask a grounded question within a session.
 }
 ```
 
-**Behavior:**
+**Phase 2 behavior:**
 1. Persists user message
-2. Retrieves top relevant chunks (Azure Search or SQL keyword fallback)
-3. Builds prompt with last 6 messages + chunks
-4. Calls Azure OpenAI (or local grounded fallback)
-5. Persists assistant message with citations JSON
+2. Translates non-Latin questions to English for retrieval (LLM or Latin-term extraction)
+3. Generates query embedding (Azure OpenAI) for vector retrieval
+4. `HybridDocumentSearchRetriever`: Azure AI Search (BM25 + KNN + optional semantic re-ranking), falls back to SQL keyword search
+5. Builds grounded prompt (last 6 messages + top-K chunks)
+6. `IAiAgent.CompleteAsync` → `AzureFoundryAgent` (Azure) or `LocalGroundedChatService` (local)
+7. Persists assistant message with citations JSON
 
 **Errors:** `404` if session not found; `400` validation errors.
 
