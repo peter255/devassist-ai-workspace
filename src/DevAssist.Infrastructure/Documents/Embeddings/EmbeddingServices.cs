@@ -44,40 +44,55 @@ public sealed class AzureOpenAiEmbeddingService(
     {
         var settings = options.Value;
         if (string.IsNullOrWhiteSpace(settings.Endpoint) || string.IsNullOrWhiteSpace(settings.ApiKey))
-            throw new InvalidOperationException("Azure OpenAI is not configured for embeddings.");
+        {
+            logger.LogWarning(
+                "Azure OpenAI endpoint/key not configured. Skipping embeddings — keyword search only.");
+            return texts.Select(_ => Array.Empty<float>()).ToList();
+        }
 
         var deploymentName = settings.EffectiveEmbeddingDeployment;
         if (string.IsNullOrWhiteSpace(deploymentName))
-            throw new InvalidOperationException(
-                "Azure OpenAI embedding deployment name is not configured. " +
-                "Set AzureOpenAi:EmbeddingDeploymentName (e.g. text-embedding-3-small).");
+        {
+            logger.LogWarning(
+                "AzureOpenAi:EmbeddingDeploymentName is not set. " +
+                "Skipping embeddings — keyword search only. " +
+                "Set it to your embedding deployment name (e.g. text-embedding-3-small).");
+            return texts.Select(_ => Array.Empty<float>()).ToList();
+        }
 
         logger.LogInformation(
-            "Generating embeddings for {Count} texts using deployment '{Deployment}'.",
-            texts.Count, deploymentName);
+            "Generating embeddings for {Count} texts using deployment '{Deployment}' at '{Endpoint}'.",
+            texts.Count, deploymentName, settings.Endpoint);
 
-        var embeddingClient = CreateEmbeddingClient(settings, deploymentName);
-        var results = new List<float[]>(texts.Count);
-
-        // Process in batches to respect API concurrency limits.
-        for (var i = 0; i < texts.Count; i += BatchSize)
+        try
         {
-            var batch = texts.Skip(i).Take(BatchSize).ToList();
-            try
+            var embeddingClient = CreateEmbeddingClient(settings, deploymentName);
+            var results = new List<float[]>(texts.Count);
+
+            // Process in batches to respect API concurrency limits.
+            for (var i = 0; i < texts.Count; i += BatchSize)
             {
+                var batch = texts.Skip(i).Take(BatchSize).ToList();
                 var response = await embeddingClient.GenerateEmbeddingsAsync(batch, cancellationToken: cancellationToken);
                 foreach (var embedding in response.Value)
                     results.Add(embedding.ToFloats().ToArray());
             }
-            catch (Exception ex)
-            {
-                logger.LogError(ex,
-                    "Azure OpenAI embedding generation failed for batch starting at index {Start}.", i);
-                throw;
-            }
-        }
 
-        return results;
+            logger.LogInformation("Successfully generated {Count} embeddings.", results.Count);
+            return results;
+        }
+        catch (Exception ex)
+        {
+            // Do NOT let embedding failures cascade into a document indexing failure.
+            // The document will still be indexed in SQL and is fully searchable via keyword search.
+            // Vector/semantic search will be unavailable until embeddings are configured correctly.
+            logger.LogWarning(ex,
+                "Azure OpenAI embedding generation failed for deployment '{Deployment}' (endpoint: {Endpoint}). " +
+                "Possible causes: model not deployed, wrong deployment name, or endpoint mismatch. " +
+                "Falling back to empty embeddings — document will be indexed with keyword search only.",
+                deploymentName, settings.Endpoint);
+            return texts.Select(_ => Array.Empty<float>()).ToList();
+        }
     }
 
     private static EmbeddingClient CreateEmbeddingClient(AzureOpenAiOptions settings, string deploymentName)

@@ -113,11 +113,26 @@ public sealed class AzureSearchDocumentIndexer(
         }
 
         var dimensions = settings.VectorDimensions > 0 ? settings.VectorDimensions : 1536;
-        var useSemanticConfig = !string.IsNullOrWhiteSpace(settings.SemanticConfigurationName);
 
-        var index = new SearchIndex(settings.IndexName)
+        // Attempt 1: vector + semantic. Attempt 2: vector only. Attempt 3: text-only fallback.
+        if (!await TryCreateIndexAsync(indexClient, settings, dimensions, withVector: true, withSemantic: true, cancellationToken) &&
+            !await TryCreateIndexAsync(indexClient, settings, dimensions, withVector: true, withSemantic: false, cancellationToken))
         {
-            Fields =
+            await TryCreateIndexAsync(indexClient, settings, dimensions, withVector: false, withSemantic: false, cancellationToken);
+        }
+    }
+
+    private async Task<bool> TryCreateIndexAsync(
+        SearchIndexClient indexClient,
+        AzureSearchOptions settings,
+        int dimensions,
+        bool withVector,
+        bool withSemantic,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var fields = new List<SearchField>
             {
                 new SimpleField("id", SearchFieldDataType.String)
                     { IsKey = true, IsFilterable = true },
@@ -129,51 +144,63 @@ public sealed class AzureSearchDocumentIndexer(
                     { IsFilterable = true },
                 new SimpleField("chunkOrder", SearchFieldDataType.Int32),
                 new SearchableField("content"),
-                new VectorSearchField("contentVector", dimensions, VectorProfileName),
-            },
-            VectorSearch = new VectorSearch
-            {
-                Algorithms =
-                {
-                    new HnswAlgorithmConfiguration(VectorAlgorithmName)
-                    {
-                        Parameters = new HnswParameters { Metric = VectorSearchAlgorithmMetric.Cosine }
-                    }
-                },
-                Profiles =
-                {
-                    new VectorSearchProfile(VectorProfileName, VectorAlgorithmName)
-                }
-            }
-        };
-
-        // Add semantic configuration when a semantic ranker plan is available.
-        if (useSemanticConfig)
-        {
-            var effectiveName = settings.SemanticConfigurationName == "default"
-                ? SemanticConfigName
-                : settings.SemanticConfigurationName;
-
-            index.SemanticSearch = new SemanticSearch
-            {
-                Configurations =
-                {
-                    new SemanticConfiguration(effectiveName, new SemanticPrioritizedFields
-                    {
-                        ContentFields = { new SemanticField("content") },
-                        KeywordsFields = { new SemanticField("documentName"), new SemanticField("documentType") }
-                    })
-                }
             };
 
-            logger.LogInformation(
-                "Semantic search configuration '{Config}' added to index '{IndexName}'.",
-                effectiveName, settings.IndexName);
-        }
+            var index = new SearchIndex(settings.IndexName) { Fields = { } };
+            foreach (var f in fields)
+                index.Fields.Add(f);
 
-        await indexClient.CreateOrUpdateIndexAsync(index, cancellationToken: cancellationToken);
-        logger.LogInformation(
-            "Created Azure Search index '{IndexName}' with vector dimensions={Dims}, semantic={Semantic}.",
-            settings.IndexName, dimensions, useSemanticConfig);
+            if (withVector)
+            {
+                index.Fields.Add(new VectorSearchField("contentVector", dimensions, VectorProfileName));
+                index.VectorSearch = new VectorSearch
+                {
+                    Algorithms =
+                    {
+                        new HnswAlgorithmConfiguration(VectorAlgorithmName)
+                        {
+                            Parameters = new HnswParameters { Metric = VectorSearchAlgorithmMetric.Cosine }
+                        }
+                    },
+                    Profiles =
+                    {
+                        new VectorSearchProfile(VectorProfileName, VectorAlgorithmName)
+                    }
+                };
+            }
+
+            if (withSemantic && !string.IsNullOrWhiteSpace(settings.SemanticConfigurationName))
+            {
+                var effectiveName = settings.SemanticConfigurationName == "default"
+                    ? SemanticConfigName
+                    : settings.SemanticConfigurationName;
+
+                index.SemanticSearch = new SemanticSearch
+                {
+                    Configurations =
+                    {
+                        new SemanticConfiguration(effectiveName, new SemanticPrioritizedFields
+                        {
+                            ContentFields = { new SemanticField("content") },
+                            KeywordsFields = { new SemanticField("documentName"), new SemanticField("documentType") }
+                        })
+                    }
+                };
+            }
+
+            await indexClient.CreateOrUpdateIndexAsync(index, cancellationToken: cancellationToken);
+            logger.LogInformation(
+                "Created Azure Search index '{IndexName}' (vector={WithVector}, semantic={WithSemantic}).",
+                settings.IndexName, withVector, withSemantic);
+            return true;
+        }
+        catch (RequestFailedException ex)
+        {
+            logger.LogWarning(ex,
+                "Failed to create index '{IndexName}' with vector={WithVector}/semantic={WithSemantic} " +
+                "(HTTP {Status}). Will retry with reduced capabilities.",
+                settings.IndexName, withVector, withSemantic, ex.Status);
+            return false;
+        }
     }
 }

@@ -81,6 +81,7 @@ public static class InfrastructureServiceCollectionExtensions
         services.AddScoped<IRequirementBreakdownPromptBuilder, RequirementBreakdownPromptBuilder>();
         services.AddScoped<ITextChunkingService, TextChunkingService>();
         services.AddScoped<IDocumentTextExtractor, PlainTextDocumentExtractor>();
+        services.AddScoped<IDocumentTextExtractor, PdfDocumentExtractor>();
         services.AddScoped<IDocumentTextExtractor, UnsupportedDocumentExtractor>();
         services.AddScoped<DocumentTextExtractionService>();
         services.AddScoped<IDocumentIndexingOrchestrator, DocumentIndexingOrchestrator>();
