@@ -1,9 +1,11 @@
 using DevAssist.Application.Interfaces;
+using DevAssist.Application.Interfaces.Auth;
 using DevAssist.Application.Interfaces.Copilot;
 using DevAssist.Application.Interfaces.Documents;
 using DevAssist.Application.Interfaces.Requirements;
 using DevAssist.Application.Interfaces.Tickets;
 using DevAssist.Infrastructure.Agents;
+using DevAssist.Infrastructure.Auth;
 using DevAssist.Infrastructure.Copilot;
 using DevAssist.Infrastructure.Copilot.OpenAi;
 using DevAssist.Infrastructure.Copilot.Prompting;
@@ -72,6 +74,11 @@ public static class InfrastructureServiceCollectionExtensions
         RegisterTicketAnalyzer(services, configuration);
         RegisterRequirementBreakdown(services, configuration);
 
+        // Auth services (ICurrentUserService is registered in the API project — it needs IHttpContextAccessor).
+        services.AddScoped<IPasswordHasher, PasswordHasher>();
+        services.AddScoped<IJwtTokenService, JwtTokenService>();
+        services.AddScoped<IUserRepository, UserRepository>();
+
         // Repositories & shared services.
         services.AddScoped<IDocumentRepository, DocumentRepository>();
         services.AddScoped<IChatRepository, ChatRepository>();
@@ -81,7 +88,8 @@ public static class InfrastructureServiceCollectionExtensions
         services.AddScoped<IRequirementBreakdownPromptBuilder, RequirementBreakdownPromptBuilder>();
         services.AddScoped<ITextChunkingService, TextChunkingService>();
         services.AddScoped<IDocumentTextExtractor, PlainTextDocumentExtractor>();
-        services.AddScoped<IDocumentTextExtractor, PdfDocumentExtractor>();
+        RegisterPdfExtractor(services, configuration);
+        services.AddScoped<IDocumentTextExtractor, DocxDocumentExtractor>();
         services.AddScoped<IDocumentTextExtractor, UnsupportedDocumentExtractor>();
         services.AddScoped<DocumentTextExtractionService>();
         services.AddScoped<IDocumentIndexingOrchestrator, DocumentIndexingOrchestrator>();
@@ -89,9 +97,21 @@ public static class InfrastructureServiceCollectionExtensions
         services.AddScoped<ICopilotPromptBuilder, CopilotPromptBuilder>();
         services.AddScoped<IKnowledgeCopilotService, KnowledgeCopilotService>();
 
-        // Background indexing — singleton queue shared between HTTP pipeline and background service.
-        services.AddSingleton<IDocumentIndexingQueue, DocumentIndexingQueue>();
+        // Background indexing queue — Service Bus when configured; in-memory Channel otherwise.
+        RegisterIndexingQueue(services, configuration);
         services.AddHostedService<BackgroundDocumentIndexingService>();
+
+        // Bind new options sections.
+        services.Configure<DocumentIntelligenceOptions>(options =>
+        {
+            options.Endpoint = configuration[$"{DocumentIntelligenceOptions.SectionName}:Endpoint"] ?? string.Empty;
+            options.ApiKey = configuration[$"{DocumentIntelligenceOptions.SectionName}:ApiKey"] ?? string.Empty;
+        });
+        services.Configure<ServiceBusOptions>(options =>
+        {
+            options.ConnectionString = configuration[$"{ServiceBusOptions.SectionName}:ConnectionString"] ?? string.Empty;
+            options.QueueName = configuration[$"{ServiceBusOptions.SectionName}:QueueName"] ?? "devassist-indexing";
+        });
 
         return services;
     }
@@ -209,5 +229,36 @@ public static class InfrastructureServiceCollectionExtensions
         }
 
         services.AddScoped<IRequirementBreakdownService, AzureOpenAiRequirementBreakdownService>();
+    }
+
+    /// <summary>
+    /// When Document Intelligence is configured, registers AzureDocumentIntelligenceOcrExtractor
+    /// before PdfDocumentExtractor so it takes priority for PDF files (handles scanned PDFs).
+    /// Otherwise falls back to PdfPig text extraction (text-based PDFs only).
+    /// </summary>
+    private static void RegisterPdfExtractor(IServiceCollection services, IConfiguration configuration)
+    {
+        var endpoint = configuration[$"{DocumentIntelligenceOptions.SectionName}:Endpoint"];
+        var apiKey = configuration[$"{DocumentIntelligenceOptions.SectionName}:ApiKey"];
+        if (!string.IsNullOrWhiteSpace(endpoint) && !string.IsNullOrWhiteSpace(apiKey))
+            services.AddScoped<IDocumentTextExtractor, AzureDocumentIntelligenceOcrExtractor>();
+
+        services.AddScoped<IDocumentTextExtractor, PdfDocumentExtractor>();
+    }
+
+    /// <summary>
+    /// Uses Azure Service Bus as the indexing queue when a connection string is configured;
+    /// falls back to the in-memory Channel-based queue for local development.
+    /// </summary>
+    private static void RegisterIndexingQueue(IServiceCollection services, IConfiguration configuration)
+    {
+        var connectionString = configuration[$"{ServiceBusOptions.SectionName}:ConnectionString"];
+        if (!string.IsNullOrWhiteSpace(connectionString))
+        {
+            services.AddSingleton<IDocumentIndexingQueue, ServiceBusDocumentIndexingQueue>();
+            return;
+        }
+
+        services.AddSingleton<IDocumentIndexingQueue, DocumentIndexingQueue>();
     }
 }

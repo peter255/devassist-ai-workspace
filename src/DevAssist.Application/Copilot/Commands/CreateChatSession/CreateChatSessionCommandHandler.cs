@@ -27,7 +27,8 @@ public sealed class CreateChatSessionCommandHandler(IChatRepository chatReposito
                 ? $"Session {DateTimeOffset.UtcNow:yyyy-MM-dd HH:mm}"
                 : request.Title.Trim(),
             CreatedAt = DateTimeOffset.UtcNow,
-            CreatedBy = request.CreatedBy
+            CreatedBy = request.CreatedBy,
+            UserId = request.UserId
         };
 
         await chatRepository.CreateSessionAsync(session, cancellationToken);

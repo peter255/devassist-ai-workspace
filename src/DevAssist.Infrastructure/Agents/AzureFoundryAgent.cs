@@ -8,6 +8,7 @@ using Microsoft.Extensions.Options;
 using OpenAI;
 using OpenAI.Chat;
 using System.ClientModel;
+using System.Runtime.CompilerServices;
 
 namespace DevAssist.Infrastructure.Agents;
 
@@ -73,6 +74,55 @@ public sealed class AzureFoundryAgent(
     // without modification when AzureFoundryAgent is registered.
     public Task<string> CompleteAsync(ChatCompletionRequest request, CancellationToken cancellationToken)
         => CompleteAsync(request.SystemPrompt, request.UserPrompt, cancellationToken);
+
+    public async IAsyncEnumerable<string> StreamAsync(
+        ChatCompletionRequest request,
+        [EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        var settings = options.Value;
+        if (!IsConfigured)
+        {
+            var full = await CompleteAsync(request, cancellationToken);
+            yield return full;
+            yield break;
+        }
+
+        ChatClient? chatClient = null;
+        var fallbackFull = string.Empty;
+        var useFallback = false;
+        try
+        {
+            chatClient = CreateChatClient(settings);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "AzureFoundryAgent failed to create chat client for streaming.");
+            fallbackFull = await CompleteAsync(request, cancellationToken);
+            useFallback = true;
+        }
+
+        if (useFallback || chatClient is null)
+        {
+            yield return fallbackFull;
+            yield break;
+        }
+
+        var streamingResult = chatClient.CompleteChatStreamingAsync(
+        [
+            new SystemChatMessage(request.SystemPrompt),
+            new UserChatMessage(request.UserPrompt)
+        ],
+        cancellationToken: cancellationToken);
+
+        await foreach (var update in streamingResult.WithCancellation(cancellationToken))
+        {
+            foreach (var part in update.ContentUpdate)
+            {
+                if (!string.IsNullOrEmpty(part.Text))
+                    yield return part.Text;
+            }
+        }
+    }
 
     // Endpoints ending with /v1 are Azure AI Foundry / serverless OpenAI-compatible.
     // They must NOT receive an api-version query parameter (AzureOpenAIClient adds it).

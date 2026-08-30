@@ -5,11 +5,13 @@ using DevAssist.Contracts.Tickets;
 using FluentValidation;
 using MediatR;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 
 namespace DevAssist.Api.Controllers;
 
 [ApiController]
 [Route("api/tickets")]
+[EnableRateLimiting("ai")]
 public sealed class TicketsController(
     IMediator mediator,
     IValidator<AnalyzeTicketCommand> analyzeValidator) : ControllerBase

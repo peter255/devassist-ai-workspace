@@ -22,6 +22,49 @@ namespace DevAssist.Infrastructure.Migrations
 
             SqlServerModelBuilderExtensions.UseIdentityColumns(modelBuilder);
 
+            modelBuilder.Entity("DevAssist.Domain.Entities.AppUser", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("DisplayName")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("nvarchar(150)");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("PasswordHash")
+                        .IsRequired()
+                        .HasMaxLength(512)
+                        .HasColumnType("nvarchar(512)");
+
+                    b.Property<string>("PasswordSalt")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<int>("Role")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Username")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Username")
+                        .IsUnique();
+
+                    b.ToTable("AppUsers", (string)null);
+                });
+
             modelBuilder.Entity("DevAssist.Domain.Entities.ChatMessage", b =>
                 {
                     b.Property<Guid>("Id")
@@ -72,7 +115,12 @@ namespace DevAssist.Infrastructure.Migrations
                         .HasMaxLength(200)
                         .HasColumnType("nvarchar(200)");
 
+                    b.Property<Guid?>("UserId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.HasKey("Id");
+
+                    b.HasIndex("UserId");
 
                     b.ToTable("ChatSessions", (string)null);
                 });
@@ -254,6 +302,15 @@ namespace DevAssist.Infrastructure.Migrations
                     b.Navigation("ChatSession");
                 });
 
+            modelBuilder.Entity("DevAssist.Domain.Entities.ChatSession", b =>
+                {
+                    b.HasOne("DevAssist.Domain.Entities.AppUser", "User")
+                        .WithMany("ChatSessions")
+                        .HasForeignKey("UserId");
+
+                    b.Navigation("User");
+                });
+
             modelBuilder.Entity("DevAssist.Domain.Entities.DocumentChunk", b =>
                 {
                     b.HasOne("DevAssist.Domain.Entities.Document", "Document")
@@ -263,6 +320,11 @@ namespace DevAssist.Infrastructure.Migrations
                         .IsRequired();
 
                     b.Navigation("Document");
+                });
+
+            modelBuilder.Entity("DevAssist.Domain.Entities.AppUser", b =>
+                {
+                    b.Navigation("ChatSessions");
                 });
 
             modelBuilder.Entity("DevAssist.Domain.Entities.ChatSession", b =>

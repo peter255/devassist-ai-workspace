@@ -31,6 +31,21 @@ public sealed class DocumentChunkConfiguration : IEntityTypeConfiguration<Docume
     }
 }
 
+public sealed class AppUserConfiguration : IEntityTypeConfiguration<AppUser>
+{
+    public void Configure(EntityTypeBuilder<AppUser> builder)
+    {
+        builder.ToTable("AppUsers");
+        builder.HasKey(x => x.Id);
+        builder.Property(x => x.Username).HasMaxLength(100).IsRequired();
+        builder.Property(x => x.DisplayName).HasMaxLength(150).IsRequired();
+        builder.Property(x => x.PasswordHash).HasMaxLength(512).IsRequired();
+        builder.Property(x => x.PasswordSalt).HasMaxLength(256).IsRequired();
+        builder.HasIndex(x => x.Username).IsUnique();
+        builder.HasMany(x => x.ChatSessions).WithOne(x => x.User).HasForeignKey(x => x.UserId).IsRequired(false);
+    }
+}
+
 public sealed class ChatSessionConfiguration : IEntityTypeConfiguration<ChatSession>
 {
     public void Configure(EntityTypeBuilder<ChatSession> builder)
@@ -39,6 +54,8 @@ public sealed class ChatSessionConfiguration : IEntityTypeConfiguration<ChatSess
         builder.HasKey(x => x.Id);
         builder.Property(x => x.Title).HasMaxLength(200).IsRequired();
         builder.Property(x => x.CreatedBy).HasMaxLength(150).IsRequired();
+        builder.Property(x => x.UserId).IsRequired(false);
+        builder.HasIndex(x => x.UserId);
     }
 }
 

@@ -33,3 +33,9 @@ public enum TicketSeverity
     High = 3,
     Critical = 4
 }
+
+public enum UserRole
+{
+    Admin = 1,
+    User = 2
+}

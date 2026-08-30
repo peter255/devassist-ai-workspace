@@ -2,12 +2,15 @@ import { useCallback, useRef, useState } from 'react'
 import type { DocumentType } from '../../types/documents'
 import { DocumentTypePicker } from './DocumentTypePicker'
 
+const ALLOWED_EXTENSIONS = ['.txt', '.md', '.pdf', '.docx']
+
 type DocumentUploadZoneProps = {
-  selectedFile: File | null
+  selectedFiles: File[]
   documentType: DocumentType
   isUploading: boolean
+  uploadProgress?: { completed: number; total: number } | null
   errorMessage?: string
-  onFileSelect: (file: File | null) => void
+  onFilesSelect: (files: File[]) => void
   onDocumentTypeChange: (type: DocumentType) => void
   onUpload: () => void
 }
@@ -18,34 +21,67 @@ function formatFileSize(bytes: number) {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
 }
 
+function isAllowedFile(file: File) {
+  const name = file.name.toLowerCase()
+  return ALLOWED_EXTENSIONS.some((ext) => name.endsWith(ext))
+}
+
+function fileKey(file: File) {
+  return `${file.name}-${file.size}-${file.lastModified}`
+}
+
 export function DocumentUploadZone({
-  selectedFile,
+  selectedFiles,
   documentType,
   isUploading,
+  uploadProgress,
   errorMessage,
-  onFileSelect,
+  onFilesSelect,
   onDocumentTypeChange,
   onUpload,
 }: DocumentUploadZoneProps) {
   const inputRef = useRef<HTMLInputElement>(null)
   const [isDragging, setIsDragging] = useState(false)
+  const [pickError, setPickError] = useState<string | null>(null)
 
-  const handleFiles = useCallback(
-    (files: FileList | null) => {
-      const file = files?.[0] ?? null
-      onFileSelect(file)
+  const addFiles = useCallback(
+    (incoming: FileList | File[] | null) => {
+      if (!incoming || incoming.length === 0) return
+
+      const list = Array.from(incoming)
+      const allowed = list.filter(isAllowedFile)
+      const rejected = list.length - allowed.length
+
+      if (allowed.length === 0) {
+        setPickError('Supported file types: .txt, .md, .pdf, .docx')
+        return
+      }
+
+      const merged = new Map(selectedFiles.map((f) => [fileKey(f), f]))
+      for (const file of allowed) merged.set(fileKey(file), file)
+      onFilesSelect([...merged.values()])
+      setPickError(rejected > 0 ? `${rejected} file(s) skipped — unsupported type.` : null)
     },
-    [onFileSelect],
+    [onFilesSelect, selectedFiles],
+  )
+
+  const removeFile = useCallback(
+    (file: File) => {
+      onFilesSelect(selectedFiles.filter((f) => fileKey(f) !== fileKey(file)))
+    },
+    [onFilesSelect, selectedFiles],
   )
 
   const onDrop = useCallback(
     (event: React.DragEvent) => {
       event.preventDefault()
       setIsDragging(false)
-      handleFiles(event.dataTransfer.files)
+      addFiles(event.dataTransfer.files)
     },
-    [handleFiles],
+    [addFiles],
   )
+
+  const hasFiles = selectedFiles.length > 0
 
   return (
     <section className="upload-hero">
@@ -55,7 +91,7 @@ export function DocumentUploadZone({
           <p className="upload-hero__eyebrow">Knowledge base</p>
           <h2 className="upload-hero__title">Feed your copilot</h2>
           <p className="upload-hero__subtitle">
-            Drop engineering docs here — specs, runbooks, postmortems — and index them for AI retrieval.
+            Drop one or more engineering docs — specs, runbooks, postmortems — and index them for AI retrieval.
           </p>
         </div>
         <div className="upload-hero__stats" aria-hidden="true">
@@ -67,33 +103,37 @@ export function DocumentUploadZone({
       </header>
 
       <div
-        className={`dropzone ${isDragging ? 'dropzone--active' : ''} ${selectedFile ? 'dropzone--filled' : ''}`}
+        className={`dropzone ${isDragging ? 'dropzone--active' : ''} ${hasFiles ? 'dropzone--filled' : ''}`}
         onDragOver={(event) => {
           event.preventDefault()
           setIsDragging(true)
         }}
         onDragLeave={() => setIsDragging(false)}
         onDrop={onDrop}
-        onClick={() => inputRef.current?.click()}
+        onClick={() => !hasFiles && inputRef.current?.click()}
         onKeyDown={(event) => {
-          if (event.key === 'Enter' || event.key === ' ') {
+          if (!hasFiles && (event.key === 'Enter' || event.key === ' ')) {
             event.preventDefault()
             inputRef.current?.click()
           }
         }}
-        role="button"
-        tabIndex={0}
-        aria-label="Upload document"
+        role={hasFiles ? undefined : 'button'}
+        tabIndex={hasFiles ? undefined : 0}
+        aria-label="Upload documents"
       >
         <input
           ref={inputRef}
           type="file"
+          multiple
           className="dropzone__input"
           accept=".txt,.md,.pdf,.docx"
-          onChange={(event) => handleFiles(event.target.files)}
+          onChange={(event) => {
+            addFiles(event.target.files)
+            event.target.value = ''
+          }}
         />
 
-        {!selectedFile ? (
+        {!hasFiles ? (
           <div className="dropzone__empty">
             <div className="dropzone__icon">
               <svg viewBox="0 0 48 48" fill="none" aria-hidden="true">
@@ -112,24 +152,41 @@ export function DocumentUploadZone({
                 />
               </svg>
             </div>
-            <p className="dropzone__title">Drag & drop your file</p>
-            <p className="dropzone__hint">or click to browse — max 10 MB</p>
+            <p className="dropzone__title">Drag & drop your files</p>
+            <p className="dropzone__hint">or click to browse — max 10 MB per file</p>
           </div>
         ) : (
-          <div className="dropzone__file" onClick={(event) => event.stopPropagation()}>
-            <div className="file-preview">
-              <span className="file-preview__badge">Ready</span>
-              <p className="file-preview__name">{selectedFile.name}</p>
-              <p className="file-preview__meta">{formatFileSize(selectedFile.size)}</p>
+          <div className="dropzone__queue" onClick={(event) => event.stopPropagation()}>
+            <div className="dropzone__queue-header">
+              <span className="file-preview__badge">{selectedFiles.length} file(s) ready</span>
+              <button
+                type="button"
+                className="dropzone__add-more"
+                onClick={() => inputRef.current?.click()}
+                disabled={isUploading}
+              >
+                + Add more
+              </button>
             </div>
-            <button
-              type="button"
-              className="file-preview__clear"
-              onClick={() => onFileSelect(null)}
-              aria-label="Remove file"
-            >
-              ✕
-            </button>
+            <ul className="dropzone__file-list">
+              {selectedFiles.map((file) => (
+                <li key={fileKey(file)} className="dropzone__file-item">
+                  <div className="dropzone__file-info">
+                    <span className="dropzone__file-name">{file.name}</span>
+                    <span className="dropzone__file-meta">{formatFileSize(file.size)}</span>
+                  </div>
+                  <button
+                    type="button"
+                    className="file-preview__clear"
+                    onClick={() => removeFile(file)}
+                    disabled={isUploading}
+                    aria-label={`Remove ${file.name}`}
+                  >
+                    ✕
+                  </button>
+                </li>
+              ))}
+            </ul>
           </div>
         )}
       </div>
@@ -140,24 +197,28 @@ export function DocumentUploadZone({
         <button
           type="button"
           className="upload-btn"
-          disabled={!selectedFile || isUploading}
+          disabled={!hasFiles || isUploading}
           onClick={onUpload}
         >
           {isUploading ? (
             <>
               <span className="upload-btn__spinner" aria-hidden="true" />
-              Uploading…
+              {uploadProgress
+                ? `Uploading ${uploadProgress.completed}/${uploadProgress.total}…`
+                : 'Uploading…'}
             </>
           ) : (
             <>
               <span aria-hidden="true">↑</span>
-              Upload to knowledge base
+              Upload {hasFiles ? `${selectedFiles.length} file${selectedFiles.length === 1 ? '' : 's'}` : 'to knowledge base'}
             </>
           )}
         </button>
       </div>
 
-      {errorMessage && <p className="upload-error">{errorMessage}</p>}
+      {(errorMessage || pickError) && (
+        <p className="upload-error">{errorMessage ?? pickError}</p>
+      )}
     </section>
   )
 }

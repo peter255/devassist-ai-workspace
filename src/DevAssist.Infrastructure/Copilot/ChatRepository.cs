@@ -1,3 +1,4 @@
+using DevAssist.Application.Copilot;
 using DevAssist.Application.Interfaces.Copilot;
 using DevAssist.Domain.Entities;
 using DevAssist.Infrastructure.Persistence;
@@ -9,6 +10,26 @@ public sealed class ChatRepository(DevAssistDbContext dbContext) : IChatReposito
 {
     public Task<ChatSession?> GetSessionByIdAsync(Guid sessionId, CancellationToken cancellationToken) =>
         dbContext.ChatSessions.FirstOrDefaultAsync(x => x.Id == sessionId, cancellationToken);
+
+    public async Task<IReadOnlyList<ChatSessionSummary>> GetSessionsByUserIdAsync(
+        Guid userId,
+        CancellationToken cancellationToken)
+    {
+        var sessions = await dbContext.ChatSessions
+            .AsNoTracking()
+            .Where(x => x.UserId == userId)
+            .Select(x => new ChatSessionSummary(
+                x.Id,
+                x.Title,
+                x.CreatedAt,
+                x.Messages.Max(m => (DateTimeOffset?)m.CreatedAt),
+                x.Messages.Count))
+            .ToListAsync(cancellationToken);
+
+        return sessions
+            .OrderByDescending(x => x.LastMessageAt ?? x.CreatedAt)
+            .ToList();
+    }
 
     public async Task<ChatSession> CreateSessionAsync(ChatSession session, CancellationToken cancellationToken)
     {

@@ -1,10 +1,12 @@
 import { NavLink, useLocation } from 'react-router-dom'
 import type { PropsWithChildren } from 'react'
 import { appRoutes, getRouteMeta } from '../app/routes'
+import { useAuth } from '../auth/authContext'
 
 export function AppLayout({ children }: PropsWithChildren) {
   const { pathname } = useLocation()
   const route = getRouteMeta(pathname)
+  const { auth, signOut, isAdmin } = useAuth()
 
   return (
     <div className="workspace-shell">
@@ -19,7 +21,23 @@ export function AppLayout({ children }: PropsWithChildren) {
               {item.navLabel}
             </NavLink>
           ))}
+          {isAdmin && (
+            <NavLink to="/admin/users">User Management</NavLink>
+          )}
         </nav>
+
+        {auth && (
+          <div className="sidebar__user">
+            <div className="sidebar__user-avatar">{auth.displayName[0].toUpperCase()}</div>
+            <div className="sidebar__user-info">
+              <span className="sidebar__user-name">{auth.displayName}</span>
+              <span className="sidebar__user-role">{auth.role}</span>
+            </div>
+            <button type="button" className="sidebar__logout" onClick={signOut} title="Sign out">
+              ⎋
+            </button>
+          </div>
+        )}
       </aside>
       <section className="workspace-main">
         <header className="topbar">

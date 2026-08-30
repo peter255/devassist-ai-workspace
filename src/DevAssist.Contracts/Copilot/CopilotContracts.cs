@@ -12,6 +12,13 @@ public sealed record CreateChatSessionResponse(
     string Title,
     DateTimeOffset CreatedAt);
 
+public sealed record ChatSessionSummaryDto(
+    Guid SessionId,
+    string Title,
+    DateTimeOffset CreatedAt,
+    DateTimeOffset? LastMessageAt,
+    int MessageCount);
+
 public sealed record AskCopilotRequest(Guid SessionId, string Question);
 
 public sealed record AskCopilotResponse(

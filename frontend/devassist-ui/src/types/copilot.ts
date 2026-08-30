@@ -4,6 +4,14 @@ export interface Citation {
   chunkReference: string
 }
 
+export interface ChatSessionSummary {
+  sessionId: string
+  title: string
+  createdAt: string
+  lastMessageAt: string | null
+  messageCount: number
+}
+
 export interface CreateChatSessionResponse {
   sessionId: string
   title: string

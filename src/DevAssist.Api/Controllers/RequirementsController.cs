@@ -6,11 +6,13 @@ using DevAssist.Contracts.Requirements;
 using FluentValidation;
 using MediatR;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 
 namespace DevAssist.Api.Controllers;
 
 [ApiController]
 [Route("api/requirements")]
+[EnableRateLimiting("ai")]
 public sealed class RequirementsController(
     IMediator mediator,
     IValidator<BreakdownRequirementCommand> breakdownValidator) : ControllerBase

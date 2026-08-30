@@ -7,6 +7,7 @@ using Microsoft.Extensions.Options;
 using OpenAI;
 using OpenAI.Chat;
 using System.ClientModel;
+using System.Runtime.CompilerServices;
 
 namespace DevAssist.Infrastructure.Copilot.OpenAi;
 
@@ -54,6 +55,36 @@ public sealed class AzureOpenAiChatService(
         }
     }
 
+    public async IAsyncEnumerable<string> StreamAsync(
+        ChatCompletionRequest request,
+        [EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        var settings = options.Value;
+        if (string.IsNullOrWhiteSpace(settings.Endpoint) || string.IsNullOrWhiteSpace(settings.ApiKey))
+        {
+            var full = await CompleteAsync(request, cancellationToken);
+            yield return full;
+            yield break;
+        }
+
+        var chatClient = CreateChatClient(settings);
+        var streamingResult = chatClient.CompleteChatStreamingAsync(
+        [
+            new SystemChatMessage(request.SystemPrompt),
+            new UserChatMessage(request.UserPrompt)
+        ],
+        cancellationToken: cancellationToken);
+
+        await foreach (var update in streamingResult.WithCancellation(cancellationToken))
+        {
+            foreach (var part in update.ContentUpdate)
+            {
+                if (!string.IsNullOrEmpty(part.Text))
+                    yield return part.Text;
+            }
+        }
+    }
+
     // Endpoints ending with /v1 (Azure AI Foundry / serverless deployments) use the
     // OpenAI-compatible REST surface which does NOT accept an api-version query parameter.
     // Standard Azure OpenAI endpoints use AzureOpenAIClient which appends api-version.
@@ -82,6 +113,15 @@ public sealed class AzureOpenAiChatService(
 
 public sealed class LocalGroundedChatService(ILogger<LocalGroundedChatService> logger) : IAzureOpenAiChatService
 {
+    public async IAsyncEnumerable<string> StreamAsync(
+        ChatCompletionRequest request,
+        [EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        var full = await CompleteAsync(request, cancellationToken);
+        if (!string.IsNullOrEmpty(full))
+            yield return full;
+    }
+
     public Task<string> CompleteAsync(ChatCompletionRequest request, CancellationToken cancellationToken)
     {
         logger.LogInformation("Using local grounded chat fallback (Azure OpenAI not configured).");

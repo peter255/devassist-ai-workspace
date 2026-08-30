@@ -294,31 +294,52 @@ See [docs/prompts.md](docs/prompts.md) for copilot grounding rules, structured J
 ---
 
 ## Known MVP limitations
-## Phase 2 completion status (Azure AI Foundry Integration)
+## Phase 2 + Phase 3 completion status
 
-Phase 2 adds real Azure AI services on top of the MVP local fallbacks.
+### Phase 2 — Azure AI Foundry Integration
 
-| Capability | Phase 2 Status |
-|------------|---------------|
+| Capability | Status |
+|------------|--------|
 | IAiAgent abstraction (AzureFoundryAgent + LocalFallbackAgent) | Complete |
 | Azure OpenAI embeddings (AzureOpenAiEmbeddingService) | Complete |
 | Azure AI Search vector fields (HNSW cosine, 1536 dims) | Complete |
 | Hybrid search (BM25 + KNN via RRF) | Complete |
 | Semantic re-ranking (optional, configurable) | Complete |
 | Azure Blob Storage (with local fallback) | Complete |
-| Background indexing (Channel queue + HostedService) | Complete |
+| Background indexing (Channel queue / Service Bus + HostedService) | Complete |
 | Auto-queue on upload (non-blocking) | Complete |
-| SQL port fix (14333 -> 1433) | Complete |
-| New config keys (EmbeddingDeploymentName, SemanticConfigurationName) | Complete |
+| PDF extraction (PdfPig, text-based PDFs) | Complete |
+| DOCX extraction (DocumentFormat.OpenXml) | Complete |
 | docs/azure-setup.md | Complete |
+
+### Phase 3 — Enterprise Hardening
+
+| Capability | Status |
+|------------|--------|
+| Chat history reload on refresh (GET /api/copilot/sessions/{id}/messages) | Complete |
+| Rate limiting (fixed-window per IP — general + AI endpoints) | Complete |
+| Application Insights telemetry + Serilog sink (config-driven) | Complete |
+| Azure Key Vault config provider (config-driven, skips when URI empty) | Complete |
+| Azure Service Bus indexing queue (config-driven, falls back to in-memory) | Complete |
+| GitHub Actions CI/CD (ci.yml + cd.yml) | Complete |
+| HTTPS redirect + configurable CORS origins | Complete |
+| Microsoft Entra ID — JWT bearer auth + RBAC (config-driven) | Complete |
+| OCR for scanned PDFs via Azure Document Intelligence (config-driven) | Complete |
+
+### Phase 4 — Ecosystem
+
+| Capability | Status |
+|------------|--------|
+| Streaming SSE responses (Copilot token-by-token) | Complete |
 
 ## Remaining TODOs
 
 | Area | Status |
 |------|--------|
-| PDF / DOCX extraction | Not supported - add PdfPig or DocumentFormat.OpenXml |
-| Copilot message history UI reload | Session persisted; UI does not restore thread on refresh |
-| Authentication / RBAC | Not implemented - internal MVP assumption |
+| PDF extraction | Supported via PdfPig (text-based PDFs). Scanned/image PDFs require OCR — see `DocumentIntelligence` config. |
+| DOCX extraction | Supported via DocumentFormat.OpenXml |
+| Copilot message history UI reload | Session persisted and restored on refresh via GET /api/copilot/sessions/{id}/messages |
+| Authentication / RBAC | Microsoft Entra ID — config-driven (skipped when `AzureAd:TenantId` is empty) |
 | Proposal Assistant | Not in scope |
 | Azure DevOps integration | Not in scope |
 | Microsoft Teams bot | Not in scope |
@@ -326,14 +347,11 @@ Phase 2 adds real Azure AI services on top of the MVP local fallbacks.
 
 ## Suggested next engineering steps
 
-- **Azure AI Search + embeddings** — wire indexer, retriever, and vector pipeline end-to-end
-- **Azure OpenAI hardening** — production prompts, monitoring, and error handling
-- **Authentication** — Entra ID / internal SSO and tenant-scoped data access
 - **Proposal Assistant** — draft technical proposals from requirements + architecture context
 - **Azure DevOps integration** — create work items from ticket/requirement outputs
-- **OCR** — extract text from screenshots and scanned PDFs
 - **Microsoft Teams bot** — ask copilot and submit tickets from chat
-- **Production hardening** — rate limiting, observability, secret management
+- **Multi-tenant** — tenant-scoped data isolation and deployment
+- **Knowledge graph** — entity relationships across indexed documents
 
 ---
 

@@ -11,6 +11,7 @@ public sealed class DevAssistDbContext(DbContextOptions<DevAssistDbContext> opti
     public DbSet<ChatMessage> ChatMessages => Set<ChatMessage>();
     public DbSet<TicketAnalysis> TicketAnalyses => Set<TicketAnalysis>();
     public DbSet<RequirementAnalysis> RequirementAnalyses => Set<RequirementAnalysis>();
+    public DbSet<AppUser> AppUsers => Set<AppUser>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
