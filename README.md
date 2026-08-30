@@ -2,7 +2,7 @@
 
 An internal **Azure AI-powered engineering workspace** for software delivery teams. DevAssist is a practical, multi-workflow assistant that helps engineers retrieve knowledge from documentation, triage incidents consistently, and decompose feature requests into implementation-ready plans — all from a single web application.
 
-It is structured as a **modular monolith** with clear Azure integration boundaries, designed to be **demo-ready today** and **extensible toward production-grade Azure AI patterns** without pretending the MVP is fully hardened.
+It is structured as a **modular monolith** with clear Azure integration boundaries, designed to be **demo-ready today** and **extensible toward production-grade Azure AI patterns**.
 
 ---
 
@@ -17,7 +17,7 @@ It is structured as a **modular monolith** with clear Azure integration boundari
 ![Copilot Arabic](docs/screenshots/copilot-arabic-answer.png)
 
 ### Knowledge Copilot — English response
-> Grounded answer with source citations from indexed markdown documents.
+> Grounded answer with source citations from indexed documents.
 
 ![Copilot English](docs/screenshots/copilot-english-answer.png)
 
@@ -35,13 +35,13 @@ It is structured as a **modular monolith** with clear Azure integration boundari
 
 ## Executive summary
 
-DevAssist is a demo-ready internal MVP that packages three common delivery workflows — **engineering knowledge retrieval**, **ticket triage**, and **requirement decomposition** — into one cohesive workspace. The solution is intentionally built as a **modular monolith** (ASP.NET Core + React) so teams can evolve each workflow independently while sharing persistence and infrastructure. It demonstrates **Azure AI application patterns** — grounded Q&A, structured model outputs, retrieval boundaries, and storage abstractions — with **local fallbacks** so reviewers can run and present the project without Azure credentials.
+DevAssist packages three delivery workflows — **engineering knowledge retrieval**, **ticket triage**, and **requirement decomposition** — into one cohesive workspace with **multi-user authentication**, **per-user chat history**, and optional **Azure AI** integrations.
+
+The solution is a **modular monolith** (ASP.NET Core 8 + React 19) with **local fallbacks** so teams can demo without Azure credentials, and **config-driven Azure services** when a `.env` file or Key Vault is wired up.
 
 ---
 
 ## Why DevAssist exists
-
-Software delivery teams routinely face three friction points:
 
 | Problem | Impact |
 |---------|--------|
@@ -49,101 +49,102 @@ Software delivery teams routinely face three friction points:
 | **Ticket triage is inconsistent and slow** | Bug reports arrive in free text. Severity, ownership, and next steps vary by who reads them. |
 | **Requirements need manual decomposition** | Feature requests land as paragraphs. Teams spend meetings turning them into backend tasks, frontend work, and acceptance criteria. |
 
-DevAssist addresses these with three focused AI-assisted modules backed by a clean layered architecture — suitable for internal review, iterative hardening, and extension into production Azure integrations.
-
 ---
 
 ## Core engineering workflows
 
 ### Knowledge Copilot
-- Upload engineering documents (`.txt`, `.md`)
-- Index content into searchable chunks
-- Ask grounded questions with **citations** from indexed material
-- RAG flow: retrieve chunks → build prompt → Azure OpenAI answer (with local fallbacks for dev)
+- **Document library** (full-screen drawer): upload, inspect, and index documents
+- Supported formats: `.txt`, `.md`, `.pdf`, `.docx` (OCR for scanned PDFs via Azure Document Intelligence)
+- **Multi-file upload** in one batch
+- **Background indexing** after upload (Service Bus or in-memory queue)
+- **Per-user chat sessions** — list past sessions, resume, and continue with SSE streaming
+- Grounded Q&A with **citations**; searches all indexed documents (no per-file selection required)
+- RAG: retrieve chunks → build prompt → Azure OpenAI answer (local fallbacks when Azure is empty)
 
 ### Ticket & Incident Analyzer
 - Paste a bug report, incident note, or support ticket
-- Receive structured triage: summary, severity, category, impacted module, suggested action
-- Persisted analysis history
+- Structured triage: summary, severity, category, impacted module, suggested action
+- Persisted analysis history on the dashboard
 
 ### Requirement Breakdown Agent
 - Paste a feature request or requirement
-- Receive implementation-oriented output: functional summary, backend/frontend tasks, testing checklist, risks, assumptions, acceptance criteria
+- Implementation-oriented output: functional summary, backend/frontend tasks, testing checklist, risks, assumptions, acceptance criteria
 - Persisted breakdown history with reload by ID
 
 ### Dashboard
 - Workspace overview with document and analysis counts
-- Quick navigation to all modules
 - API health indicator
+- Quick navigation to all modules
+
+### Authentication & admin
+- **Local JWT login** (username/password) when `Jwt:Secret` is configured
+- Roles: **Admin** and **User**
+- **Admin panel** (`/admin/users`): create users, assign roles, reset passwords
+- Chat sessions are **scoped per user** — no cross-user session access
+- **Microsoft Entra ID** supported as an optional alternative (see Configuration)
+- Default dev admin (seeded on first run): `admin` / value of `Jwt:DefaultAdminPassword` in appsettings
 
 ---
 
-## Azure AI coverage in this project
-
-DevAssist was intentionally designed to exercise practical **Azure AI Apps / Agents** engineering patterns — not as a thin wrapper around a chat box, but as a workspace where retrieval, prompts, storage, and task-specific AI flows are separated and swappable.
+## Azure AI coverage
 
 | Azure capability | Where it appears in DevAssist |
 | ---------------- | ----------------------------- |
-| **Azure AI Foundry / Azure OpenAI** | `IAiAgent` abstraction → `AzureFoundryAgent` (chat + JSON) or `LocalFallbackAgent` |
-| **Azure OpenAI Embeddings** | `AzureOpenAiEmbeddingService` — dense vectors for hybrid search (Phase 2) |
-| **Prompt orchestration** | Dedicated `PromptBuilder` classes per module: `CopilotPromptBuilder`, `TicketAnalyzerPromptBuilder`, `RequirementBreakdownPromptBuilder` |
-| **Retrieval-Augmented Generation (RAG)** | Upload → Blob → extract → chunk → embed → Azure AI Search → top-K → grounded prompt → Azure OpenAI answer with citations |
-| **Azure AI Search (hybrid + semantic)** | BM25 + KNN vector (HNSW cosine) + optional semantic re-ranking; SQL keyword fallback when not configured |
-| **Azure Blob Storage** | Document upload pipeline; local filesystem fallback |
-| **Background indexing** | `BackgroundDocumentIndexingService` — uploads return immediately; indexing runs async via `System.Threading.Channels` |
-| **Local fallback strategy** | Every Azure service has a local equivalent — the app runs fully without Azure credentials |
+| **Azure OpenAI** | Copilot answers, ticket/requirement analyzers, embeddings |
+| **Azure OpenAI Embeddings** | `AzureOpenAiEmbeddingService` — vectors for hybrid search |
+| **Azure AI Search** | BM25 + KNN (HNSW) + optional semantic re-ranking; SQL keyword fallback |
+| **Azure Blob Storage** | Document files; local `./data/documents` fallback |
+| **Azure Document Intelligence** | OCR for scanned/image PDFs |
+| **Azure Service Bus** | Durable document indexing queue; in-memory Channel fallback |
+| **Azure Key Vault** | Optional secrets provider (early in config pipeline) |
+| **Application Insights** | Optional telemetry + Serilog sink |
+| **Prompt orchestration** | `CopilotPromptBuilder`, `TicketAnalyzerPromptBuilder`, `RequirementBreakdownPromptBuilder` |
+| **Local fallback strategy** | Every Azure integration has a local equivalent for dev/demo |
+
+A reference Azure resource group for this project: **`rg-devassist-ai`** (Sweden Central). Copy `.env.example` to `.env` and fill values after provisioning.
+
+See [docs/azure-setup.md](docs/azure-setup.md) for provisioning steps.
 
 ---
 
-## Tech stack snapshot
+## Tech stack
 
 | Layer | Technologies |
 | ----- | ------------ |
-| **Backend** | ASP.NET Core 8, MediatR, FluentValidation, EF Core, SQL Server, Serilog |
-| **Frontend** | React, TypeScript, Vite, TanStack Query, React Router |
-| **AI integrations** | Azure OpenAI, Azure AI Search (boundary), Azure Blob Storage (boundary) |
-| **Local fallbacks** | SQL keyword retrieval, filesystem storage, heuristic analyzers |
+| **Backend** | ASP.NET Core 8, MediatR, FluentValidation, EF Core, SQL Server, Serilog, JWT Bearer |
+| **Frontend** | React 19, TypeScript, Vite, TanStack Query, React Router |
+| **AI** | Azure OpenAI, Azure AI Search, Azure Blob, Document Intelligence (all optional) |
+| **CI/CD** | GitHub Actions (`ci.yml`, `cd.yml`) |
+| **Local dev** | Docker SQL Server, filesystem storage, SQL keyword retrieval, heuristic AI fallbacks |
 
 ---
 
 ## Architecture overview
 
-``
+```
 ┌─────────────────────────────────────────────────────────────┐
 │                  React + TypeScript (Vite)                  │
-│         Dashboard · Copilot · Tickets · Requirements        │
+│    Login · Dashboard · Copilot · Tickets · Requirements     │
 └──────────────────────────┬──────────────────────────────────┘
-                           │ REST /api/*
+                           │ REST /api/*  (+ SSE ask-stream)
 ┌──────────────────────────▼──────────────────────────────────┐
-│              DevAssist.Api (ASP.NET Core 8)                 │
-│   Controllers → MediatR handlers → Application services     │
+│              DevAssist.Api (ASP.NET Core 8)                   │
+│   JWT auth · Controllers · MediatR · Rate limiting            │
 └──────────────────────────┬──────────────────────────────────┘
                            │
         ┌──────────────────┼──────────────────┐
         ▼                  ▼                  ▼
 ┌───────────────┐  ┌───────────────┐  ┌───────────────────┐
 │  SQL Server   │  │ Azure OpenAI  │  │ Azure AI Search   │
-│  (EF Core)    │  │ chat + JSON   │  │ (optional)        │
-└───────────────┘  └───────────────┘  └───────────────────┘
-                           │
-                   ┌───────▼────────┐
-                   │ Azure Blob     │
-                   │ (optional)     │
-                   └────────────────┘
-``
-
-**Backend:** ASP.NET Core 8 modular monolith — Domain, Application, Infrastructure, Contracts, API.
-
-**Frontend:** React 19, TypeScript, Vite, TanStack Query, React Router.
-
-**Data:** SQL Server for documents, chunks, chat sessions, ticket analyses, requirement analyses.
-
-**Azure (optional in local dev):**
-- **Azure OpenAI** — copilot answers, ticket analysis, requirement breakdown
-- **Azure AI Search** — retrieval boundary (scaffolded; SQL keyword fallback locally)
-- **Azure Blob Storage** — document files (falls back to local `./data/documents`)
-
-When Azure credentials are empty, the app runs with **local fallbacks** (heuristic analyzers, SQL search, filesystem storage) so demos work without cloud setup.
+│  users, docs, │  │ chat + embed  │  │ hybrid retrieval  │
+│  chat sessions│  └───────────────┘  └───────────────────┘
+└───────────────┘            │
+                     ┌───────▼────────┐
+                     │ Azure Blob     │
+                     │ Service Bus    │
+                     └────────────────┘
+```
 
 See [docs/architecture.md](docs/architecture.md) for request flows and module boundaries.
 
@@ -151,22 +152,22 @@ See [docs/architecture.md](docs/architecture.md) for request flows and module bo
 
 ## Repository structure
 
-``
+```
 devassist-ai-workspace/
 ├── src/
-│   ├── DevAssist.Api/           # HTTP API, controllers, Program.cs, Swagger
-│   ├── DevAssist.Application/   # MediatR commands/queries, validators, interfaces
-│   ├── DevAssist.Domain/        # Entities and enums
-│   ├── DevAssist.Infrastructure/# EF Core, Azure adapters, repositories, AI services
-│   └── DevAssist.Contracts/     # Request/response DTOs shared with API consumers
-├── frontend/devassist-ui/       # React SPA
-├── docs/                        # Architecture, API spec, demo script, prompts
-├── samples/                     # Demo-ready ticket, requirement, and engineering docs
-├── docker-compose.yml           # SQL Server for local development
-├── nuget.config                 # NuGet.org feed for clean CI/GitHub clones
-├── .env.example                 # Environment variable template
+│   ├── DevAssist.Api/            # HTTP API, auth, controllers, Program.cs
+│   ├── DevAssist.Application/    # MediatR commands/queries, validators
+│   ├── DevAssist.Domain/         # Entities (AppUser, ChatSession, …)
+│   ├── DevAssist.Infrastructure/ # EF Core, Azure adapters, AI services
+│   └── DevAssist.Contracts/      # Request/response DTOs
+├── frontend/devassist-ui/        # React SPA
+├── docs/                         # Architecture, API spec, demo script
+├── samples/                      # Demo ticket, requirement, and docs
+├── .github/workflows/            # CI + CD (build, publish artifacts)
+├── docker-compose.yml            # SQL Server (local dev)
+├── .env.example                  # Environment template (never commit .env)
 └── DevAssist.sln
-``
+```
 
 ---
 
@@ -175,8 +176,8 @@ devassist-ai-workspace/
 | Tool | Version |
 |------|---------|
 | [.NET SDK](https://dotnet.microsoft.com/download) | 8.x |
-| [Node.js](https://nodejs.org/) | 20+ recommended |
-| [Docker](https://www.docker.com/) | For SQL Server container |
+| [Node.js](https://nodejs.org/) | 20+ |
+| [Docker Desktop](https://www.docker.com/) | For local SQL Server |
 | Azure resources | Optional — local fallbacks work without them |
 
 ---
@@ -185,193 +186,199 @@ devassist-ai-workspace/
 
 ### 1. Start SQL Server
 
-``bash
-docker compose up -d
-``
+```bash
+docker compose up -d sqlserver
+```
 
-Default SA password matches `appsettings.json` and `.env.example`: `Your_strong_password123`.
+Default port: **`1433`** (mapped from container `1433`). SA password: `Your_strong_password123` (see `docker-compose.yml` and `appsettings.json`).
 
 ### 2. Configure environment (optional)
 
-Copy `.env.example` to `.env` and fill Azure values when ready. For a local demo, defaults work without Azure.
+```bash
+cp .env.example .env
+```
 
-### 3. Run the app (API + UI — Visual Studio SPA style)
+Fill Azure values when ready. For a fully local demo, defaults in `appsettings.json` work without Azure.
 
-One command starts the API and launches Vite automatically via **SpaProxy** (same as pressing F5 in Visual Studio):
+The API loads `.env` from the repo root automatically (see `Program.cs`).
 
-``bash
+### 3. Run the app
+
+**Option A — API + UI together (SpaProxy):**
+
+```bash
 dotnet restore DevAssist.sln
 dotnet run --project src/DevAssist.Api --launch-profile http
-``
+```
 
-Or from the repo root: `npm run dev` / `scripts\dev.cmd` (Windows).
+Open **http://localhost:5147**
 
-> **Note:** `nuget.config` at the repo root avoids unreachable corporate NuGet feeds. See [docs/troubleshooting.md](docs/troubleshooting.md) if restore fails.
+**Option B — separate frontend dev server:**
 
-- **App (open this):** `http://localhost:5147`
-- Swagger (Development): `http://localhost:5147/swagger`
-- Health: `http://localhost:5147/health`
-- Migrations apply automatically in Development
-- Node.js is required; `npm install` runs in `frontend/devassist-ui` on first build if `node_modules` is missing
+```bash
+# Terminal 1
+dotnet run --project src/DevAssist.Api --launch-profile http
 
-### 4. Run frontend only (optional)
-
-If you prefer two terminals:
-
-``bash
+# Terminal 2
 cd frontend/devassist-ui
 npm install
 npm run dev
-``
+```
 
-- UI: `http://localhost:5173` (Vite proxies `/api` and `/health` to the API)
+Open **http://localhost:5173** (Vite proxies `/api` to the API).
+
+### 4. Sign in
+
+On first run with JWT enabled, a default admin is seeded:
+
+- **Username:** `admin`
+- **Password:** `Admin@123!` (or `Jwt:DefaultAdminPassword` in appsettings)
+
+Change the password via **User Management** after first login.
+
+### Endpoints
+
+| URL | Purpose |
+|-----|---------|
+| `http://localhost:5147` | App (UI + API via SpaProxy) |
+| `http://localhost:5147/swagger` | OpenAPI (Development) |
+| `http://localhost:5147/health` | Health check |
+
+> **Note:** `nuget.config` at the repo root avoids unreachable corporate NuGet feeds. See [docs/troubleshooting.md](docs/troubleshooting.md).
 
 ---
 
-## Open the demo workspace
+## Demo flow (~5–7 minutes)
 
-After both services are running, verify the project end-to-end:
+1. **Login** as admin (or a regular user).
+2. **Dashboard** — API health, document and analysis counts.
+3. **Knowledge Copilot** — **Manage documents** → upload `samples/sample-docs/authentication-architecture.md` (indexing runs in background) → start or resume a chat session → ask: *"How does session logout work?"* → review streaming answer and citations.
+4. **Ticket Analyzer** — paste `samples/sample-ticket.txt`, review triage output.
+5. **Requirement Breakdown** — paste `samples/sample-requirement.txt`, review structured plan.
 
-1. Open **http://localhost:5147** — confirm the Dashboard shows API health.
-2. Go to **Knowledge Copilot** — upload `samples/sample-docs/authentication-architecture.md`.
-3. Click **Index** on the uploaded document and wait for status **Indexed**.
-4. Start a chat session and ask: *"How does user logout work?"* — review the answer and citations.
-5. Open **Ticket Analyzer** — load the sample ticket and run analysis.
-6. Open **Requirement Breakdown** — load the sample requirement and review the structured output.
-
-For a guided presenter script, see [docs/demo-scenarios.md](docs/demo-scenarios.md).
+Full script: [docs/demo-scenarios.md](docs/demo-scenarios.md)
 
 ---
 
 ## Configuration
 
-Settings live in `src/DevAssist.Api/appsettings.json` or environment variables (double-underscore nesting).
+Settings live in `appsettings.json`, environment variables, or `.env` (double-underscore nesting).
 
 | Setting | Purpose |
 |---------|---------|
 | `ConnectionStrings__DevAssistDb` | SQL Server connection string |
-| `AzureOpenAi__Endpoint` | Azure OpenAI / AI Foundry endpoint URL |
-| `AzureOpenAi__ApiKey` | Azure OpenAI API key |
-| `AzureOpenAi__DeploymentName` | Chat model deployment (e.g. `gpt-4o`) |
-| `AzureOpenAi__EmbeddingDeploymentName` | Embedding model (e.g. `text-embedding-3-small`) |
-| `AzureSearch__Endpoint` | Azure AI Search service URL |
-| `AzureSearch__ApiKey` | Search admin/query key |
-| `AzureSearch__IndexName` | Index name (default: `devassist-documents`) |
-| `AzureSearch__SemanticConfigurationName` | Semantic ranker config name (leave empty to disable) |
-| `AzureSearch__VectorDimensions` | Embedding vector dimensions (default: `1536`) |
-| `BlobStorage__ConnectionString` | Azure Storage connection string |
-| `BlobStorage__ContainerName` | Blob container (default: `documents`) |
-| `LocalFileStorage__RootPath` | Local file path when blob is empty (default: `./data/documents`) |
-| `VITE_API_BASE_URL` | Frontend API base (empty = use Vite proxy) |
+| `Jwt__Secret` | Enables local JWT auth when set (min 32 chars) |
+| `Jwt__Issuer` / `Jwt__Audience` | Token validation |
+| `Jwt__DefaultAdminPassword` | First-run admin seed password |
+| `AzureOpenAi__Endpoint` / `ApiKey` | Azure OpenAI |
+| `AzureOpenAi__DeploymentName` | Chat model (e.g. `gpt-4o`) |
+| `AzureOpenAi__EmbeddingDeploymentName` | Embeddings (e.g. `text-embedding-ada-002`) |
+| `AzureSearch__Endpoint` / `ApiKey` | Azure AI Search |
+| `AzureSearch__SemanticConfigurationName` | Semantic ranker (Standard tier+) |
+| `BlobStorage__ConnectionString` | Azure Blob; empty → `./data/documents` |
+| `DocumentIntelligence__Endpoint` / `ApiKey` | OCR for scanned PDFs |
+| `ServiceBus__ConnectionString` | Durable indexing queue; empty → in-memory |
+| `KeyVault__Uri` | Azure Key Vault secrets provider |
+| `ApplicationInsights__ConnectionString` | Telemetry |
+| `AzureAd__TenantId` / `ClientId` | Microsoft Entra ID (optional; use instead of or alongside JWT setup) |
+| `Cors__AllowedOrigins__*` | Allowed frontend origins |
+| `RateLimiting__*` | Per-IP rate limits (general + AI endpoints) |
+| `VITE_API_BASE_URL` | Frontend API base (empty = Vite proxy) |
+| `VITE_AAD_*` | Entra ID for frontend MSAL (optional) |
 
-**Local fallback behavior:** Empty `AzureOpenAi` -> heuristic analyzers + grounded copilot. Empty `AzureSearch` -> SQL keyword retrieval. Empty `BlobStorage` -> local filesystem. All empty = fully local demo.
-
-For Azure provisioning steps see [docs/azure-setup.md](docs/azure-setup.md).
----
-
-## Demo flow (~5–7 minutes)
-
-A full presenter script is in [docs/demo-scenarios.md](docs/demo-scenarios.md).
-
-1. **Dashboard** — show module overview and API health.
-2. **Knowledge Copilot** — upload `samples/sample-docs/authentication-architecture.md`, index it, ask: *"How does session logout work?"*
-3. **Ticket Analyzer** — paste `samples/sample-ticket.txt`, review structured triage.
-4. **Requirement Breakdown** — paste `samples/sample-requirement.txt`, review tasks and acceptance criteria.
-5. **Close** — explain value: faster knowledge access, consistent triage, implementation-ready breakdowns.
+**Fallback behavior:** Empty Azure sections → local filesystem, SQL keyword search, and heuristic analyzers. The app remains runnable for demos.
 
 ---
 
-## API documentation
+## Phase completion status
 
-See [docs/api-spec.md](docs/api-spec.md) for endpoint details, request/response shapes, and behavior notes.
-
----
-
-## Prompting strategy
-
-See [docs/prompts.md](docs/prompts.md) for copilot grounding rules, structured JSON outputs for analyzers, and tuning notes.
-
----
-
-## Known MVP limitations
-## Phase 2 + Phase 3 completion status
-
-### Phase 2 — Azure AI Foundry Integration
+### Phase 2 — Azure AI Integration ✅
 
 | Capability | Status |
 |------------|--------|
-| IAiAgent abstraction (AzureFoundryAgent + LocalFallbackAgent) | Complete |
-| Azure OpenAI embeddings (AzureOpenAiEmbeddingService) | Complete |
-| Azure AI Search vector fields (HNSW cosine, 1536 dims) | Complete |
-| Hybrid search (BM25 + KNN via RRF) | Complete |
-| Semantic re-ranking (optional, configurable) | Complete |
-| Azure Blob Storage (with local fallback) | Complete |
-| Background indexing (Channel queue / Service Bus + HostedService) | Complete |
-| Auto-queue on upload (non-blocking) | Complete |
-| PDF extraction (PdfPig, text-based PDFs) | Complete |
-| DOCX extraction (DocumentFormat.OpenXml) | Complete |
-| docs/azure-setup.md | Complete |
+| IAiAgent abstraction (`AzureFoundryAgent` + `LocalFallbackAgent`) | Done |
+| Azure OpenAI embeddings + hybrid search (BM25 + KNN) | Done |
+| Semantic re-ranking (config-driven, Standard tier) | Done |
+| Azure Blob Storage + local fallback | Done |
+| Background indexing (Channel / Service Bus) | Done |
+| Auto-queue on upload | Done |
+| PDF (PdfPig) + DOCX (OpenXml) extraction | Done |
+| OCR via Document Intelligence | Done |
 
-### Phase 3 — Enterprise Hardening
+### Phase 3 — Enterprise Hardening ✅
 
 | Capability | Status |
 |------------|--------|
-| Chat history reload on refresh (GET /api/copilot/sessions/{id}/messages) | Complete |
-| Rate limiting (fixed-window per IP — general + AI endpoints) | Complete |
-| Application Insights telemetry + Serilog sink (config-driven) | Complete |
-| Azure Key Vault config provider (config-driven, skips when URI empty) | Complete |
-| Azure Service Bus indexing queue (config-driven, falls back to in-memory) | Complete |
-| GitHub Actions CI/CD (ci.yml + cd.yml) | Complete |
-| HTTPS redirect + configurable CORS origins | Complete |
-| Microsoft Entra ID — JWT bearer auth + RBAC (config-driven) | Complete |
-| OCR for scanned PDFs via Azure Document Intelligence (config-driven) | Complete |
+| Local JWT auth + Admin/User roles + user management API/UI | Done |
+| Per-user copilot sessions + session list + history reload | Done |
+| SSE streaming copilot responses | Done |
+| Rate limiting (general + AI endpoints) | Done |
+| Application Insights + Key Vault providers | Done |
+| Service Bus indexing queue | Done |
+| GitHub Actions CI/CD | Done |
+| HTTPS redirect (production) + CORS | Done |
+| Microsoft Entra ID (optional, config-driven) | Done |
+| Multi-file document upload | Done |
 
-### Phase 4 — Ecosystem
+### Phase 4 — Ecosystem 🟡
 
 | Capability | Status |
 |------------|--------|
-| Streaming SSE responses (Copilot token-by-token) | Complete |
-
-## Remaining TODOs
-
-| Area | Status |
-|------|--------|
-| PDF extraction | Supported via PdfPig (text-based PDFs). Scanned/image PDFs require OCR — see `DocumentIntelligence` config. |
-| DOCX extraction | Supported via DocumentFormat.OpenXml |
-| Copilot message history UI reload | Session persisted and restored on refresh via GET /api/copilot/sessions/{id}/messages |
-| Authentication / RBAC | Microsoft Entra ID — config-driven (skipped when `AzureAd:TenantId` is empty) |
-| Proposal Assistant | Not in scope |
-| Azure DevOps integration | Not in scope |
-| Microsoft Teams bot | Not in scope |
----
-
-## Suggested next engineering steps
-
-- **Proposal Assistant** — draft technical proposals from requirements + architecture context
-- **Azure DevOps integration** — create work items from ticket/requirement outputs
-- **Microsoft Teams bot** — ask copilot and submit tickets from chat
-- **Multi-tenant** — tenant-scoped data isolation and deployment
-- **Knowledge graph** — entity relationships across indexed documents
+| Streaming SSE (Copilot) | Done |
+| Proposal Assistant | Planned |
+| Azure DevOps work-item integration | Planned |
+| Microsoft Teams bot | Planned |
+| Multi-tenant isolation | Planned |
 
 ---
 
-## Troubleshooting
+## Known limitations
 
-See [docs/troubleshooting.md](docs/troubleshooting.md) for NuGet feeds, SQL Server, API connectivity, and Azure fallback behavior.
+| Area | Notes |
+|------|-------|
+| **Production deploy** | CD publishes artifacts only; no Azure App Service deploy yet |
+| **Secrets** | Key Vault wired but secrets typically still in `.env` locally |
+| **Azure SQL** | Local Docker SQL only; no managed DB in repo yet |
+| **Azure AI Search Basic** | Vector/semantic features limited; upgrade to Standard for full hybrid quality |
+| **Automated tests** | No test projects in solution yet; CI `dotnet test` has nothing to run |
+| **Document delete** | Not implemented |
+| **Session rename/delete** | Not implemented in UI |
+| **Entra ID** | Scaffolded; local JWT is the default dev path |
 
 ---
 
-## Screenshots
+## Roadmap (suggested next steps)
 
-Add UI screenshots to `docs/screenshots/` for GitHub README embedding. See [docs/screenshots/README.md](docs/screenshots/README.md).
+### Wave 1 — Production ready
+- Azure SQL + App Service deploy + CD pipeline to environment
+- Migrate secrets to Key Vault + Managed Identity
+- Upgrade Azure AI Search to Standard + semantic configuration
+- Add integration/unit tests (auth, copilot, documents)
+
+### Wave 2 — UX polish
+- Document status polling after upload; **Index all** for pending files
+- Delete documents (API + UI)
+- Rename/delete copilot sessions; change-password profile page
+
+### Wave 3 — Ecosystem (Phase 4)
+- Azure DevOps: create work items from ticket/requirement outputs
+- Proposal Assistant module
+- Microsoft Teams bot
+- Optional: full Entra ID as primary corporate auth
+
+---
+
+## API & prompts
+
+- **API reference:** [docs/api-spec.md](docs/api-spec.md)
+- **Prompting strategy:** [docs/prompts.md](docs/prompts.md)
+- **Troubleshooting:** [docs/troubleshooting.md](docs/troubleshooting.md)
 
 ---
 
 ## Project status
 
-DevAssist is currently a **demo-ready internal MVP**: the core workflows are implemented end-to-end, the architecture is intentionally layered for extension, and local fallbacks make it presentable without Azure credentials.
-
-The project is **not** production-complete. The natural next steps are wiring Azure AI Search indexing and embeddings, strengthening Azure OpenAI integration quality, adding authentication, and adding observability — building on the abstractions already in place rather than restructuring the solution.
+DevAssist is a **demo-ready internal MVP** with **multi-user auth**, **Azure-ready integrations**, and **local fallbacks**. Core workflows are implemented end-to-end through Phase 3. Phase 4 ecosystem modules and production hardening (deploy, tests, Key Vault-only secrets) are the main remaining work.
 
 ---
 
