@@ -3,4 +3,4 @@ using MediatR;
 
 namespace DevAssist.Application.Copilot.Commands.AskCopilotQuestion;
 
-public sealed record AskCopilotQuestionCommand(Guid SessionId, string Question) : IRequest<AskCopilotResponse>;
+public sealed record AskCopilotQuestionCommand(Guid SessionId, string Question, Guid? UserId = null) : IRequest<AskCopilotResponse>;

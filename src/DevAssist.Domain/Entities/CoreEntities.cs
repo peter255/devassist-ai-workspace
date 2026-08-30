@@ -25,12 +25,27 @@ public sealed class DocumentChunk
     public Document? Document { get; set; }
 }
 
+public sealed class AppUser
+{
+    public Guid Id { get; set; }
+    public string Username { get; set; } = string.Empty;
+    public string DisplayName { get; set; } = string.Empty;
+    public string PasswordHash { get; set; } = string.Empty;
+    public string PasswordSalt { get; set; } = string.Empty;
+    public UserRole Role { get; set; }
+    public bool IsActive { get; set; } = true;
+    public DateTimeOffset CreatedAt { get; set; }
+    public ICollection<ChatSession> ChatSessions { get; set; } = new List<ChatSession>();
+}
+
 public sealed class ChatSession
 {
     public Guid Id { get; set; }
     public string Title { get; set; } = string.Empty;
     public DateTimeOffset CreatedAt { get; set; }
     public string CreatedBy { get; set; } = string.Empty;
+    public Guid? UserId { get; set; }
+    public AppUser? User { get; set; }
     public ICollection<ChatMessage> Messages { get; set; } = new List<ChatMessage>();
 }
 

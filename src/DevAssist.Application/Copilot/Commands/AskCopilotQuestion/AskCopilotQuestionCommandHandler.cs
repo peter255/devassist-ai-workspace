@@ -18,5 +18,5 @@ public sealed class AskCopilotQuestionCommandHandler(IKnowledgeCopilotService co
     : IRequestHandler<AskCopilotQuestionCommand, AskCopilotResponse>
 {
     public Task<AskCopilotResponse> Handle(AskCopilotQuestionCommand request, CancellationToken cancellationToken) =>
-        copilotService.AskAsync(request.SessionId, request.Question, cancellationToken);
+        copilotService.AskAsync(request.SessionId, request.Question, request.UserId, cancellationToken);
 }

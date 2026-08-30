@@ -1,6 +1,7 @@
 using DevAssist.Application.Interfaces;
 using DevAssist.Application.Interfaces.Copilot;
 using Microsoft.Extensions.Logging;
+using System.Runtime.CompilerServices;
 
 namespace DevAssist.Infrastructure.Agents;
 
@@ -36,4 +37,13 @@ public sealed class LocalFallbackAgent(ILogger<LocalFallbackAgent> logger) : IAi
     // other callers receive an empty string and apply their own fallback.
     public Task<string> CompleteAsync(ChatCompletionRequest request, CancellationToken cancellationToken)
         => CompleteAsync(request.SystemPrompt, request.UserPrompt, cancellationToken);
+
+    public async IAsyncEnumerable<string> StreamAsync(
+        ChatCompletionRequest request,
+        [EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        var full = await CompleteAsync(request, cancellationToken);
+        if (!string.IsNullOrEmpty(full))
+            yield return full;
+    }
 }

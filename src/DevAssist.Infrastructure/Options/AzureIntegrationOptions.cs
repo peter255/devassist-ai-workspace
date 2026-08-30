@@ -47,3 +47,22 @@ public sealed class BlobStorageOptions
     public string ConnectionString { get; set; } = string.Empty;
     public string ContainerName { get; set; } = "documents";
 }
+
+/// <summary>
+/// Azure Document Intelligence (formerly Form Recognizer) options.
+/// When Endpoint and ApiKey are set, scanned/image PDFs are processed via the
+/// prebuilt-read model instead of falling back to PdfPig text extraction.
+/// </summary>
+public sealed class DocumentIntelligenceOptions
+{
+    public const string SectionName = "DocumentIntelligence";
+    public string Endpoint { get; set; } = string.Empty;
+    public string ApiKey { get; set; } = string.Empty;
+}
+
+public sealed class ServiceBusOptions
+{
+    public const string SectionName = "ServiceBus";
+    public string ConnectionString { get; set; } = string.Empty;
+    public string QueueName { get; set; } = "devassist-indexing";
+}

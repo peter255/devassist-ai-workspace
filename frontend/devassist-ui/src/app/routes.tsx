@@ -32,8 +32,19 @@ export const appRoutes: AppRoute[] = [
   },
 ]
 
+const adminRoutes: AppRoute[] = [
+  {
+    path: '/admin/users',
+    title: 'User Management',
+    subtitle: 'Manage users and permissions',
+    navLabel: 'User Management',
+  },
+]
+
+const allRoutes = [...appRoutes, ...adminRoutes]
+
 export function getRouteMeta(pathname: string): AppRoute {
-  const match = appRoutes.find((route) =>
+  const match = allRoutes.find((route) =>
     route.path === '/' ? pathname === '/' : pathname.startsWith(route.path),
   )
   return match ?? appRoutes[0]

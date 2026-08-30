@@ -1,5 +1,7 @@
+using System.Runtime.CompilerServices;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using DevAssist.Application.Copilot;
 using DevAssist.Application.Interfaces;
 using DevAssist.Application.Interfaces.Copilot;
 using DevAssist.Contracts.Copilot;
@@ -87,10 +89,16 @@ public sealed class KnowledgeCopilotService(
         return question;
     }
 
-    public async Task<AskCopilotResponse> AskAsync(Guid sessionId, string question, CancellationToken cancellationToken)
+    public async Task<AskCopilotResponse> AskAsync(
+        Guid sessionId,
+        string question,
+        Guid? userId = null,
+        CancellationToken cancellationToken = default)
     {
         var session = await chatRepository.GetSessionByIdAsync(sessionId, cancellationToken)
             ?? throw new KeyNotFoundException($"Chat session '{sessionId}' was not found.");
+
+        ChatSessionAccess.EnsureOwnedBy(session, userId);
 
         var userMessage = new ChatMessage
         {
@@ -150,5 +158,66 @@ public sealed class KnowledgeCopilotService(
         await chatRepository.SaveChangesAsync(cancellationToken);
 
         return new AskCopilotResponse(answer, citations);
+    }
+
+    public async IAsyncEnumerable<string> AskStreamAsync(
+        Guid sessionId,
+        string question,
+        Guid? userId = null,
+        [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        var session = await chatRepository.GetSessionByIdAsync(sessionId, cancellationToken)
+            ?? throw new KeyNotFoundException($"Chat session '{sessionId}' was not found.");
+
+        ChatSessionAccess.EnsureOwnedBy(session, userId);
+
+        var userMessage = new ChatMessage
+        {
+            Id = Guid.NewGuid(),
+            ChatSessionId = session.Id,
+            Role = ChatMessageRole.User,
+            Content = question.Trim(),
+            CreatedAt = DateTimeOffset.UtcNow
+        };
+        await chatRepository.AddMessageAsync(userMessage, cancellationToken);
+        await chatRepository.SaveChangesAsync(cancellationToken);
+
+        var history = await chatRepository.GetMessagesAsync(sessionId, cancellationToken);
+
+        var searchQuery = IsPrimarilyNonLatin(question.Trim())
+            ? await BuildEnglishSearchQueryAsync(question.Trim(), cancellationToken)
+            : question;
+
+        var chunks = await searchRetriever.SearchAsync(searchQuery, top: 5, cancellationToken);
+        var citations = chunks.Select(c => new CitationDto(c.DocumentId, c.DocumentName, c.ChunkReference)).ToList();
+
+        var systemPrompt = promptBuilder.BuildSystemPrompt();
+        var userPrompt = promptBuilder.BuildUserPrompt(question, chunks, history);
+
+        var fullAnswer = new System.Text.StringBuilder();
+
+        await foreach (var token in chatService.StreamAsync(
+            new ChatCompletionRequest(systemPrompt, userPrompt), cancellationToken))
+        {
+            fullAnswer.Append(token);
+            yield return JsonSerializer.Serialize(new { token }, JsonOptions);
+        }
+
+        // Emit citations as a final event.
+        yield return JsonSerializer.Serialize(new { citations }, JsonOptions);
+
+        var citationsJson = citations.Count > 0 ? JsonSerializer.Serialize(citations, JsonOptions) : null;
+
+        var assistantMessage = new ChatMessage
+        {
+            Id = Guid.NewGuid(),
+            ChatSessionId = session.Id,
+            Role = ChatMessageRole.Assistant,
+            Content = fullAnswer.ToString(),
+            CitationsJson = citationsJson,
+            CreatedAt = DateTimeOffset.UtcNow
+        };
+        await chatRepository.AddMessageAsync(assistantMessage, cancellationToken);
+        await chatRepository.SaveChangesAsync(cancellationToken);
     }
 }

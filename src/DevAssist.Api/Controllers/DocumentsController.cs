@@ -8,11 +8,13 @@ using DevAssist.Domain.Enums;
 using FluentValidation;
 using MediatR;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 
 namespace DevAssist.Api.Controllers;
 
 [ApiController]
 [Route("api/documents")]
+[EnableRateLimiting("general")]
 public sealed class DocumentsController(
     IMediator mediator,
     IValidator<UploadDocumentCommand> uploadValidator,

@@ -17,7 +17,17 @@ public interface IDocumentIndexingService
 
 public interface IKnowledgeCopilotService
 {
-    Task<AskCopilotResponse> AskAsync(Guid sessionId, string question, CancellationToken cancellationToken);
+    Task<AskCopilotResponse> AskAsync(Guid sessionId, string question, Guid? userId = null, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Same retrieval flow as AskAsync, but streams tokens from the LLM as they arrive.
+    /// The final element in the sequence is a JSON-serialized AskCopilotResponse (answer + citations).
+    /// </summary>
+    IAsyncEnumerable<string> AskStreamAsync(
+        Guid sessionId,
+        string question,
+        Guid? userId = null,
+        CancellationToken cancellationToken = default);
 }
 
 public interface ITicketAnalyzerService
