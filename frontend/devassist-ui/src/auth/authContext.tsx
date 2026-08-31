@@ -1,4 +1,5 @@
-import { createContext, useCallback, useContext, useState } from 'react'
+import { createContext, useCallback, useContext, useEffect, useState } from 'react'
+import { getCurrentUser } from '../api/auth'
 import type { StoredAuth } from '../types/auth'
 
 const STORAGE_KEY = 'devassist.auth'
@@ -41,6 +42,32 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
     }
     setAuth(null)
+  }, [])
+
+  useEffect(() => {
+    if (!auth) return
+
+    let cancelled = false
+    void getCurrentUser()
+      .then((me) => {
+        if (cancelled) return
+        const refreshed: StoredAuth = {
+          token: me.token,
+          username: me.username,
+          displayName: me.displayName,
+          role: me.role,
+          expiresAt: me.expiresAt,
+        }
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(refreshed))
+        setAuth(refreshed)
+      })
+      .catch(() => {
+        if (!cancelled) signOut()
+      })
+
+    return () => {
+      cancelled = true
+    }
   }, [])
 
   const isAdmin = auth?.role === 'Admin'

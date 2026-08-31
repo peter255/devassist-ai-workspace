@@ -3,11 +3,13 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   askCopilotStream,
   createChatSession,
+  deleteChatSession,
   getChatMessages,
   listChatSessions,
 } from '../../api/copilot'
 import { queryKeys } from '../../app/queryKeys'
 import { useAuth } from '../../auth/authContext'
+import { ConfirmDialog } from '../ui/ConfirmDialog'
 import type { ChatMessageItem, Citation } from '../../types/copilot'
 
 function sessionStorageKey(username: string) {
@@ -32,6 +34,8 @@ export function CopilotChat({ hasIndexedDocuments }: CopilotChatProps) {
   const [isStreaming, setIsStreaming] = useState(false)
   const [streamError, setStreamError] = useState<string | null>(null)
   const [isCreatingSession, setIsCreatingSession] = useState(false)
+  const [deletingSessionId, setDeletingSessionId] = useState<string | null>(null)
+  const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const abortRef = useRef<AbortController | null>(null)
   const historyLoadedFor = useRef<string | null>(null)
@@ -74,8 +78,9 @@ export function CopilotChat({ hasIndexedDocuments }: CopilotChatProps) {
   }, [historyQuery.isError, historyQuery.error, sessionId, storageKey])
 
   useEffect(() => {
+    if (messages.length === 0) return
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages, isStreaming])
+  }, [messages.length, isStreaming])
 
   const persistSession = useCallback(
     (id: string) => {
@@ -84,6 +89,13 @@ export function CopilotChat({ hasIndexedDocuments }: CopilotChatProps) {
     },
     [storageKey],
   )
+
+  const clearActiveSession = useCallback(() => {
+    setSessionId(null)
+    localStorage.removeItem(storageKey)
+    historyLoadedFor.current = null
+    setMessages([])
+  }, [storageKey])
 
   const handleSelectSession = useCallback(
     (id: string) => {
@@ -114,14 +126,67 @@ export function CopilotChat({ hasIndexedDocuments }: CopilotChatProps) {
     }
   }, [persistSession, queryClient])
 
+  const ensureSession = useCallback(async () => {
+    if (sessionId) return sessionId
+
+    const data = await createChatSession()
+    historyLoadedFor.current = data.sessionId
+    persistSession(data.sessionId)
+    setMessages([])
+    await queryClient.invalidateQueries({ queryKey: queryKeys.chatSessions })
+    return data.sessionId
+  }, [sessionId, persistSession, queryClient])
+
+  const handleDeleteSession = useCallback((id: string) => {
+    if (isStreaming || deletingSessionId) return
+    setDeleteTargetId(id)
+  }, [isStreaming, deletingSessionId])
+
+  const confirmDeleteSession = useCallback(async () => {
+    if (!deleteTargetId || isStreaming || deletingSessionId) return
+
+    const id = deleteTargetId
+    setDeletingSessionId(id)
+    setStreamError(null)
+    try {
+      await deleteChatSession(id)
+      if (sessionId === id) {
+        abortRef.current?.abort()
+        clearActiveSession()
+      }
+      setDeleteTargetId(null)
+      await queryClient.invalidateQueries({ queryKey: queryKeys.chatSessions })
+    } catch (err) {
+      setStreamError((err as Error).message)
+    } finally {
+      setDeletingSessionId(null)
+    }
+  }, [
+    deleteTargetId,
+    sessionId,
+    isStreaming,
+    deletingSessionId,
+    clearActiveSession,
+    queryClient,
+  ])
+
   const handleAsk = useCallback(
     async (event: React.FormEvent) => {
       event.preventDefault()
-      if (!sessionId || !question.trim() || isStreaming) return
+      if (!question.trim() || isStreaming) return
 
       const text = question.trim()
       setQuestion('')
       setStreamError(null)
+
+      let activeSessionId = sessionId
+      try {
+        activeSessionId = await ensureSession()
+      } catch (err) {
+        setStreamError((err as Error).message)
+        setQuestion(text)
+        return
+      }
 
       const userMsg: ChatMessageItem = {
         id: crypto.randomUUID(),
@@ -143,7 +208,7 @@ export function CopilotChat({ hasIndexedDocuments }: CopilotChatProps) {
 
       try {
         await askCopilotStream(
-          sessionId,
+          activeSessionId,
           text,
           (token) => {
             setMessages((prev) =>
@@ -169,21 +234,21 @@ export function CopilotChat({ hasIndexedDocuments }: CopilotChatProps) {
         setQuestion(text)
 
         if (message.toLowerCase().includes('not found') || message.toLowerCase().includes('session')) {
-          setSessionId(null)
-          localStorage.removeItem(storageKey)
-          historyLoadedFor.current = null
-          setMessages([])
+          clearActiveSession()
         }
       } finally {
         setIsStreaming(false)
         abortRef.current = null
       }
     },
-    [sessionId, question, isStreaming, queryClient, storageKey],
+    [sessionId, question, isStreaming, ensureSession, queryClient, clearActiveSession],
   )
 
   const isLoading = historyQuery.isLoading && Boolean(sessionId)
   const sessions = sessionsQuery.data ?? []
+  const inputPlaceholder = hasIndexedDocuments
+    ? 'Ask about your documents… e.g. Summarize the authentication flow'
+    : 'Ask a question (upload & index documents for grounded answers)'
 
   return (
     <section className="copilot-chat">
@@ -193,11 +258,6 @@ export function CopilotChat({ hasIndexedDocuments }: CopilotChatProps) {
           <h3 className="copilot-chat__title">Ask your documents</h3>
         </div>
         <div className="copilot-chat__actions">
-          {sessionId ? (
-            <span className="session-badge" title={sessionId}>
-              Session active
-            </span>
-          ) : null}
           <button
             type="button"
             className="session-btn"
@@ -237,23 +297,38 @@ export function CopilotChat({ hasIndexedDocuments }: CopilotChatProps) {
           {sessions.length > 0 && (
             <ul className="copilot-session-list">
               {sessions.map((session) => (
-                <li key={session.sessionId}>
-                  <button
-                    type="button"
+                <li key={session.sessionId} className="copilot-session-list__item">
+                  <div
                     className={`copilot-session-item${
                       sessionId === session.sessionId ? ' copilot-session-item--active' : ''
-                    }`}
-                    onClick={() => handleSelectSession(session.sessionId)}
-                    disabled={isStreaming}
+                    }${deletingSessionId === session.sessionId ? ' copilot-session-item--disabled' : ''}`}
                   >
-                    <span className="copilot-session-item__title">{session.title}</span>
-                    <span className="copilot-session-item__meta">
-                      {formatSessionDate(session.lastMessageAt ?? session.createdAt)}
-                      {session.messageCount > 0 && (
-                        <> · {session.messageCount} messages</>
-                      )}
-                    </span>
-                  </button>
+                    <button
+                      type="button"
+                      className="copilot-session-item__select"
+                      onClick={() => handleSelectSession(session.sessionId)}
+                      disabled={isStreaming || deletingSessionId === session.sessionId}
+                      aria-current={sessionId === session.sessionId ? 'true' : undefined}
+                    >
+                      <span className="copilot-session-item__title">{session.title}</span>
+                      <span className="copilot-session-item__meta">
+                        {formatSessionDate(session.lastMessageAt ?? session.createdAt)}
+                        {session.messageCount > 0 && (
+                          <> · {session.messageCount} messages</>
+                        )}
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      className="copilot-session-item__delete"
+                      onClick={() => handleDeleteSession(session.sessionId)}
+                      disabled={isStreaming || deletingSessionId === session.sessionId}
+                      aria-label={`Delete session ${session.title}`}
+                      title="Delete session"
+                    >
+                      {deletingSessionId === session.sessionId ? '…' : '×'}
+                    </button>
+                  </div>
                 </li>
               ))}
             </ul>
@@ -261,22 +336,20 @@ export function CopilotChat({ hasIndexedDocuments }: CopilotChatProps) {
         </aside>
 
         <div className="copilot-chat__main">
-          {!sessionId && (
-            <div className="copilot-chat__empty">
-              <p>Start a chat session or pick one from your history to continue.</p>
-              <button
-                type="button"
-                className="session-btn session-btn--primary"
-                onClick={handleNewSession}
-                disabled={isCreatingSession}
-              >
-                Start chat session
-              </button>
-            </div>
-          )}
-
-          {sessionId && (
-            <>
+          <div className="copilot-chat__body">
+            {!sessionId ? (
+              <div className="copilot-chat__empty">
+                <p>Start a chat session or pick one from your history to continue.</p>
+                <button
+                  type="button"
+                  className="session-btn session-btn--primary"
+                  onClick={handleNewSession}
+                  disabled={isCreatingSession}
+                >
+                  {isCreatingSession ? 'Starting…' : 'Start chat session'}
+                </button>
+              </div>
+            ) : (
               <div className="copilot-chat__messages">
                 {isLoading && (
                   <p className="copilot-chat__hint">Loading conversation history…</p>
@@ -286,7 +359,7 @@ export function CopilotChat({ hasIndexedDocuments }: CopilotChatProps) {
                   <p className="copilot-chat__hint">
                     {hasIndexedDocuments
                       ? 'Ask about architecture, integrations, runbooks, or requirements in your indexed docs.'
-                      : 'Upload and index a document first, then ask questions here.'}
+                      : 'Upload and index a document first for grounded answers with citations.'}
                   </p>
                 )}
 
@@ -304,30 +377,38 @@ export function CopilotChat({ hasIndexedDocuments }: CopilotChatProps) {
 
                 <div ref={messagesEndRef} />
               </div>
+            )}
+          </div>
 
-              <form className="copilot-chat__input-row" onSubmit={handleAsk}>
-                <input
-                  type="text"
-                  dir="auto"
-                  value={question}
-                  onChange={(e) => setQuestion(e.target.value)}
-                  placeholder={
-                    hasIndexedDocuments
-                      ? 'e.g. Summarize the authentication flow…'
-                      : 'Index documents first, then ask here…'
-                  }
-                  disabled={isStreaming || isLoading}
-                />
-                <button type="submit" disabled={!question.trim() || isStreaming || isLoading}>
-                  {isStreaming ? 'Generating…' : 'Ask'}
-                </button>
-              </form>
+          <form className="copilot-chat__input-row" onSubmit={handleAsk}>
+            <input
+              type="text"
+              dir="auto"
+              value={question}
+              onChange={(e) => setQuestion(e.target.value)}
+              placeholder={inputPlaceholder}
+              disabled={isStreaming}
+              aria-label="Ask a question about your documents"
+            />
+            <button type="submit" disabled={!question.trim() || isStreaming}>
+              {isStreaming ? 'Generating…' : 'Ask'}
+            </button>
+          </form>
 
-              {streamError && <p className="copilot-chat__error">{streamError}</p>}
-            </>
-          )}
+          {streamError && <p className="copilot-chat__error">{streamError}</p>}
         </div>
       </div>
+
+      <ConfirmDialog
+        open={Boolean(deleteTargetId)}
+        title="Delete chat session?"
+        message="This cannot be undone."
+        confirmLabel="Delete"
+        tone="danger"
+        loading={Boolean(deletingSessionId)}
+        onConfirm={() => void confirmDeleteSession()}
+        onCancel={() => setDeleteTargetId(null)}
+      />
     </section>
   )
 }

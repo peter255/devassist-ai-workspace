@@ -37,6 +37,12 @@ public sealed class ChatRepository(DevAssistDbContext dbContext) : IChatReposito
         return session;
     }
 
+    public Task DeleteSessionAsync(ChatSession session, CancellationToken cancellationToken)
+    {
+        dbContext.ChatSessions.Remove(session);
+        return Task.CompletedTask;
+    }
+
     public async Task AddMessageAsync(ChatMessage message, CancellationToken cancellationToken) =>
         await dbContext.ChatMessages.AddAsync(message, cancellationToken);
 

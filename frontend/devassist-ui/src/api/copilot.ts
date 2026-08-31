@@ -18,6 +18,14 @@ export async function createChatSession(title?: string): Promise<CreateChatSessi
   return parseApiResponse<CreateChatSessionResponse>(response)
 }
 
+export async function deleteChatSession(sessionId: string): Promise<void> {
+  const response = await fetch(`${apiBaseUrl}/api/copilot/sessions/${sessionId}`, {
+    method: 'DELETE',
+    headers: await getAuthHeaders(),
+  })
+  await parseApiResponse<object>(response)
+}
+
 export async function getChatMessages(sessionId: string): Promise<ChatMessageItem[]> {
   const response = await fetch(`${apiBaseUrl}/api/copilot/sessions/${sessionId}/messages`, {
     headers: await getAuthHeaders(),

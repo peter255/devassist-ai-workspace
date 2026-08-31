@@ -2,6 +2,13 @@ import type { LoginResponse, UserDto } from '../types/auth'
 import { apiBaseUrl, getAuthHeaders } from './client'
 import { parseApiResponse } from './parseResponse'
 
+export async function getCurrentUser(): Promise<LoginResponse> {
+  const response = await fetch(`${apiBaseUrl}/api/auth/me`, {
+    headers: await getAuthHeaders(),
+  })
+  return parseApiResponse<LoginResponse>(response)
+}
+
 export async function login(username: string, password: string): Promise<LoginResponse> {
   const response = await fetch(`${apiBaseUrl}/api/auth/login`, {
     method: 'POST',

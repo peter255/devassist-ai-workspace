@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import { createUser, deleteUser, getUsers, resetPassword, updateUser } from '../api/auth'
+import { ConfirmDialog } from '../components/ui/ConfirmDialog'
 import { StateMessage } from '../components/ui/StateMessage'
 import type { UserDto } from '../types/auth'
 import './admin-users.css'
@@ -12,6 +13,7 @@ export function AdminUsersPage() {
   const [newPassword, setNewPassword] = useState('')
   const [addForm, setAddForm] = useState({ username: '', displayName: '', password: '', role: 'User' })
   const [formError, setFormError] = useState<string | null>(null)
+  const [deleteTarget, setDeleteTarget] = useState<UserDto | null>(null)
 
   const usersQuery = useQuery({ queryKey: ['admin', 'users'], queryFn: getUsers })
 
@@ -224,10 +226,7 @@ export function AdminUsersPage() {
                       <button
                         type="button"
                         className="admin-action-btn admin-action-btn--danger"
-                        onClick={() => {
-                          if (confirm(`Delete user "${user.displayName}"? This cannot be undone.`))
-                            deleteMutation.mutate(user.id)
-                        }}
+                        onClick={() => setDeleteTarget(user)}
                       >
                         Delete
                       </button>
@@ -239,6 +238,22 @@ export function AdminUsersPage() {
           </table>
         </div>
       )}
+
+      <ConfirmDialog
+        open={Boolean(deleteTarget)}
+        title={deleteTarget ? `Delete user "${deleteTarget.displayName}"?` : 'Delete user?'}
+        message="This cannot be undone."
+        confirmLabel="Delete"
+        tone="danger"
+        loading={deleteMutation.isPending}
+        onConfirm={() => {
+          if (!deleteTarget) return
+          deleteMutation.mutate(deleteTarget.id, {
+            onSuccess: () => setDeleteTarget(null),
+          })
+        }}
+        onCancel={() => setDeleteTarget(null)}
+      />
     </div>
   )
 }

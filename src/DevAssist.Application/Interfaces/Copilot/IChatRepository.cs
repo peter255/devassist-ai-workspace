@@ -8,6 +8,7 @@ public interface IChatRepository
     Task<ChatSession?> GetSessionByIdAsync(Guid sessionId, CancellationToken cancellationToken);
     Task<IReadOnlyList<ChatSessionSummary>> GetSessionsByUserIdAsync(Guid userId, CancellationToken cancellationToken);
     Task<ChatSession> CreateSessionAsync(ChatSession session, CancellationToken cancellationToken);
+    Task DeleteSessionAsync(ChatSession session, CancellationToken cancellationToken);
     Task AddMessageAsync(ChatMessage message, CancellationToken cancellationToken);
     Task<IReadOnlyList<ChatMessage>> GetMessagesAsync(Guid sessionId, CancellationToken cancellationToken);
     Task SaveChangesAsync(CancellationToken cancellationToken);
