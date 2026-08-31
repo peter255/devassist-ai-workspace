@@ -100,16 +100,7 @@ public sealed class KnowledgeCopilotService(
 
         ChatSessionAccess.EnsureOwnedBy(session, userId);
 
-        var userMessage = new ChatMessage
-        {
-            Id = Guid.NewGuid(),
-            ChatSessionId = session.Id,
-            Role = ChatMessageRole.User,
-            Content = question.Trim(),
-            CreatedAt = DateTimeOffset.UtcNow
-        };
-        await chatRepository.AddMessageAsync(userMessage, cancellationToken);
-        await chatRepository.SaveChangesAsync(cancellationToken);
+        await AddUserMessageAndRenameIfFirstAsync(session, question, cancellationToken);
 
         var history = await chatRepository.GetMessagesAsync(sessionId, cancellationToken);
 
@@ -171,16 +162,7 @@ public sealed class KnowledgeCopilotService(
 
         ChatSessionAccess.EnsureOwnedBy(session, userId);
 
-        var userMessage = new ChatMessage
-        {
-            Id = Guid.NewGuid(),
-            ChatSessionId = session.Id,
-            Role = ChatMessageRole.User,
-            Content = question.Trim(),
-            CreatedAt = DateTimeOffset.UtcNow
-        };
-        await chatRepository.AddMessageAsync(userMessage, cancellationToken);
-        await chatRepository.SaveChangesAsync(cancellationToken);
+        await AddUserMessageAndRenameIfFirstAsync(session, question, cancellationToken);
 
         var history = await chatRepository.GetMessagesAsync(sessionId, cancellationToken);
 
@@ -218,6 +200,30 @@ public sealed class KnowledgeCopilotService(
             CreatedAt = DateTimeOffset.UtcNow
         };
         await chatRepository.AddMessageAsync(assistantMessage, cancellationToken);
+        await chatRepository.SaveChangesAsync(cancellationToken);
+    }
+
+    private async Task AddUserMessageAndRenameIfFirstAsync(
+        ChatSession session,
+        string question,
+        CancellationToken cancellationToken)
+    {
+        var priorMessages = await chatRepository.GetMessagesAsync(session.Id, cancellationToken);
+        var isFirstQuestion = priorMessages.Count == 0;
+
+        var userMessage = new ChatMessage
+        {
+            Id = Guid.NewGuid(),
+            ChatSessionId = session.Id,
+            Role = ChatMessageRole.User,
+            Content = question.Trim(),
+            CreatedAt = DateTimeOffset.UtcNow
+        };
+        await chatRepository.AddMessageAsync(userMessage, cancellationToken);
+
+        if (isFirstQuestion)
+            session.Title = ChatSessionTitle.FromFirstQuestion(question);
+
         await chatRepository.SaveChangesAsync(cancellationToken);
     }
 }

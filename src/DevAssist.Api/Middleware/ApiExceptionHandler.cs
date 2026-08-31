@@ -13,6 +13,7 @@ public sealed class ApiExceptionHandler(ILogger<ApiExceptionHandler> logger) : I
         var (statusCode, message) = exception switch
         {
             KeyNotFoundException ex => (StatusCodes.Status404NotFound, ex.Message),
+            UnauthorizedAccessException ex => (StatusCodes.Status401Unauthorized, ex.Message),
             InvalidOperationException ex => (StatusCodes.Status400BadRequest, ex.Message),
             ArgumentException ex => (StatusCodes.Status400BadRequest, ex.Message),
             _ => (StatusCodes.Status500InternalServerError, "An unexpected error occurred.")

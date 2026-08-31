@@ -1,5 +1,6 @@
 using DevAssist.Application.Copilot.Commands.AskCopilotQuestion;
 using DevAssist.Application.Copilot.Commands.CreateChatSession;
+using DevAssist.Application.Copilot.Commands.DeleteChatSession;
 using DevAssist.Application.Copilot.Queries.GetSessionMessages;
 using DevAssist.Application.Copilot.Queries.GetUserSessions;
 using DevAssist.Application.Interfaces;
@@ -39,7 +40,14 @@ public sealed class CopilotController(
         [FromBody] CreateChatSessionRequest request,
         CancellationToken cancellationToken)
     {
-        var command = new CreateChatSessionCommand(request.Title, request.CreatedBy, currentUser.UserId);
+        if (currentUser.UserId is not Guid userId)
+            return Unauthorized(ApiResponse<CreateChatSessionResponse>.Fail("Authentication required."));
+
+        var command = new CreateChatSessionCommand(
+            request.Title,
+            currentUser.Username ?? request.CreatedBy,
+            userId);
+
         var validation = await createSessionValidator.ValidateAsync(command, cancellationToken);
         if (!validation.IsValid)
         {
@@ -47,8 +55,38 @@ public sealed class CopilotController(
                 string.Join("; ", validation.Errors.Select(x => x.ErrorMessage))));
         }
 
-        var result = await mediator.Send(command, cancellationToken);
-        return Ok(ApiResponse<CreateChatSessionResponse>.Ok(result));
+        try
+        {
+            var result = await mediator.Send(command, cancellationToken);
+            return Ok(ApiResponse<CreateChatSessionResponse>.Ok(result));
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            return Unauthorized(ApiResponse<CreateChatSessionResponse>.Fail(ex.Message));
+        }
+    }
+
+    [HttpDelete("sessions/{sessionId:guid}")]
+    public async Task<ActionResult<ApiResponse<object>>> DeleteSession(
+        Guid sessionId,
+        CancellationToken cancellationToken)
+    {
+        if (currentUser.UserId is not Guid userId)
+            return Unauthorized(ApiResponse<object>.Fail("Authentication required."));
+
+        try
+        {
+            await mediator.Send(new DeleteChatSessionCommand(sessionId, userId), cancellationToken);
+            return Ok(ApiResponse<object>.Ok(new { }));
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return NotFound(ApiResponse<object>.Fail(ex.Message));
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, ApiResponse<object>.Fail(ex.Message));
+        }
     }
 
     [HttpGet("sessions/{sessionId:guid}/messages")]

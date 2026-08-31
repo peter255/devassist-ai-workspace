@@ -25,7 +25,9 @@ export async function parseApiResponse<T>(response: Response): Promise<T> {
   }
 
   if (!response.ok || !payload.success || payload.data === null || payload.data === undefined) {
-    throw new Error(payload.error ?? `Request failed with status ${response.status}`)
+    const message = payload.error ?? `Request failed with status ${response.status}`
+    if (response.status === 401) throw new Error(message || 'Unauthorized — please sign in again.')
+    throw new Error(message)
   }
 
   return payload.data
