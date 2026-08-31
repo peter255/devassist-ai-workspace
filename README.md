@@ -102,9 +102,15 @@ The solution is a **modular monolith** (ASP.NET Core 8 + React 19) with **local 
 | **Prompt orchestration** | `CopilotPromptBuilder`, `TicketAnalyzerPromptBuilder`, `RequirementBreakdownPromptBuilder` |
 | **Local fallback strategy** | Every Azure integration has a local equivalent for dev/demo |
 
-A reference Azure resource group for this project: **`rg-devassist-ai`** (Sweden Central). Copy `.env.example` to `.env` and fill values after provisioning.
+A reference Azure resource group for this project: **`rg-devassist-ai`** (Sweden Central).
 
-See [docs/azure-setup.md](docs/azure-setup.md) for provisioning steps.
+**One-command Azure setup** (creates resources + writes `.env`):
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\azure\provision.ps1
+```
+
+See [scripts/azure/README.md](scripts/azure/README.md) and [docs/azure-setup.md](docs/azure-setup.md) for options and manual steps.
 
 ---
 
@@ -165,6 +171,7 @@ devassist-ai-workspace/
 ├── samples/                      # Demo ticket, requirement, and docs
 ├── .github/workflows/            # CI + CD (build, publish artifacts)
 ├── docker-compose.yml            # SQL Server (local dev)
+├── scripts/azure/                # Azure CLI provision + teardown scripts
 ├── .env.example                  # Environment template (never commit .env)
 └── DevAssist.sln
 ```
@@ -190,7 +197,7 @@ devassist-ai-workspace/
 docker compose up -d sqlserver
 ```
 
-Default port: **`1433`** (mapped from container `1433`). SA password: `Your_strong_password123` (see `docker-compose.yml` and `appsettings.json`).
+Default port: **`1433`** (host → container `1433`). SA password: `Your_strong_password123` (see `docker-compose.yml` and `appsettings.json`).
 
 ### 2. Configure environment (optional)
 
