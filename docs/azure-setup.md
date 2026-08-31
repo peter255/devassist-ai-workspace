@@ -4,6 +4,44 @@ This guide covers provisioning and configuring the Azure resources required for 
 
 ---
 
+## Automated provisioning (recommended)
+
+Use the Azure CLI scripts in **`scripts/azure/`** to create all resources and generate a ready-to-use **`.env`** file in one step.
+
+**Prerequisites:** [Azure CLI](https://learn.microsoft.com/cli/azure/install-azure-cli), `az login`, and (for full AI) an Azure OpenAI–enabled subscription.
+
+```powershell
+# From repo root (Windows)
+powershell -ExecutionPolicy Bypass -File .\scripts\azure\provision.ps1
+```
+
+```bash
+# Linux / macOS
+chmod +x scripts/azure/provision.sh
+./scripts/azure/provision.sh
+```
+
+| Script | Purpose |
+|--------|---------|
+| `provision.ps1` / `provision.sh` | Create resource group + services; write `.env` |
+| `write-env.ps1` | Regenerate `.env` from an existing resource group |
+| `teardown.ps1` / `teardown.sh` | Delete the resource group |
+
+Full options and troubleshooting: **[scripts/azure/README.md](../scripts/azure/README.md)**
+
+After provisioning:
+
+```bash
+docker compose up -d sqlserver
+dotnet run --project src/DevAssist.Api --launch-profile http
+```
+
+> **Note:** SQL Server runs locally via Docker. Azure SQL is not created by these scripts.
+
+The sections below describe the same resources for **manual** portal setup.
+
+---
+
 ## Required Azure Resources
 
 | Resource | Purpose | Tier |
