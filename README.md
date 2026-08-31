@@ -8,28 +8,28 @@ It is structured as a **modular monolith** with clear Azure integration boundari
 
 ## Screenshots
 
-### Dashboard
-![Dashboard](docs/screenshots/dashboard.png)
+Full visual walkthrough: **[docs/user-guide.md](docs/user-guide.md)**
 
-### Knowledge Copilot — Arabic response (RTL)
-> Auto-detects Arabic text direction — answer flows right-to-left, mixed content handled per paragraph.
+### Sign in & Dashboard
+![Sign in](docs/screenshots/01-login.png)
+![Dashboard](docs/screenshots/02-dashboard.png)
 
-![Copilot Arabic](docs/screenshots/copilot-arabic-answer.png)
+### Knowledge Copilot
+![Copilot — chat workspace](docs/screenshots/03-knowledge-copilot-empty.png)
+![Document library](docs/screenshots/04-knowledge-copilot-document-library.png)
 
-### Knowledge Copilot — English response
-> Grounded answer with source citations from indexed documents.
+**English — grounded answer with citations**
 
-![Copilot English](docs/screenshots/copilot-english-answer.png)
+![Copilot English](docs/screenshots/05-knowledge-copilot-english-answer.png)
 
 ### Ticket & Incident Analyzer
-> Structured triage output: severity badge, category, impacted module, and suggested action.
-
-![Ticket Analyzer](docs/screenshots/ticket-analyzer.png)
+![Ticket Analyzer — result](docs/screenshots/07-ticket-analyzer-result.png)
 
 ### Requirement Breakdown
-> Full engineering breakdown: functional summary, backend/frontend tasks, testing checklist, risks, assumptions, and acceptance criteria.
+![Requirement Breakdown — result](docs/screenshots/09-requirement-breakdown-result.png)
 
-![Requirement Breakdown](docs/screenshots/requirement-breakdown.png)
+### Admin — User Management
+![User list](docs/screenshots/10-admin-users-list.png)
 
 ---
 
@@ -161,7 +161,7 @@ devassist-ai-workspace/
 │   ├── DevAssist.Infrastructure/ # EF Core, Azure adapters, AI services
 │   └── DevAssist.Contracts/      # Request/response DTOs
 ├── frontend/devassist-ui/        # React SPA
-├── docs/                         # Architecture, API spec, demo script
+├── docs/                         # Architecture, API spec, user guide, demo script
 ├── samples/                      # Demo ticket, requirement, and docs
 ├── .github/workflows/            # CI + CD (build, publish artifacts)
 ├── docker-compose.yml            # SQL Server (local dev)
@@ -370,6 +370,7 @@ Settings live in `appsettings.json`, environment variables, or `.env` (double-un
 
 ## API & prompts
 
+- **User guide (screenshots):** [docs/user-guide.md](docs/user-guide.md)
 - **API reference:** [docs/api-spec.md](docs/api-spec.md)
 - **Prompting strategy:** [docs/prompts.md](docs/prompts.md)
 - **Troubleshooting:** [docs/troubleshooting.md](docs/troubleshooting.md)
